@@ -318,8 +318,7 @@ def validate_args(args,config,parser=None):
         def_cmd = f"sacctmgr show user {user_name} --noheader format=DefaultAccount%30"
         default_acc = os.popen(def_cmd).read().strip()
 
-        # 2. Handle missing or 'None' input
-        # This ensures that if the user forgets -A, it defaults to their default group
+        # 2. Handle missing or 'None' input, This ensures that if the user forgets -A, it defaults to their default group
         user_provided_account = args.get('account')
         if not user_provided_account or str(user_provided_account).lower() == 'none':
             # Fetch all accounts to provide context to the user
