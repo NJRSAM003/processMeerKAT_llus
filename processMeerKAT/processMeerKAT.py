@@ -319,13 +319,22 @@ def validate_args(args,config,parser=None):
         default_acc = os.popen(def_cmd).read().strip()
 
         # 2. Handle missing or 'None' input
-        # This ensures that if the user forgets -A, it defaults to their billing group
+        # This ensures that if the user forgets -A, it defaults to their default group
         user_provided_account = args.get('account')
         if not user_provided_account or str(user_provided_account).lower() == 'none':
+            # Fetch all accounts to provide context to the user
+            list_cmd = f"sacctmgr show user {user_name} --noheader -s format=account%30"
+            available = os.popen(list_cmd).read().split()
+            
             if default_acc:
+                msg = f"No account specified. Authorized groups: {', '.join(available)}."
+                print(f"INFO: {msg}")
                 args['account'] = default_acc
             else:
-                raise_error(config, "No Slurm account provided and no default detected for your user.", parser)
+                msg = "No Slurm account provided and no default detected for your user."
+                if available:
+                    msg += f" Please specify one of your authorized groups: {', '.join(available)}."
+                raise_error(config, msg, parser)
 
         # 3. Direct Validation
         # Instead of fetching a list, we ask Slurm: "Is this specific account valid for this user?"
@@ -334,7 +343,7 @@ def validate_args(args,config,parser=None):
 
         if not is_valid:
             # Only fetch the full list if validation fails (to provide a helpful error)
-            list_cmd = f"sacctmgr show user {user_name} --noheader format=account%30"
+            list_cmd = f"sacctmgr show user {user_name} --noheader -s format=account%30"
             available = os.popen(list_cmd).read().split()
             msg = f"Accounting group '{args['account']}' is not recognized for user {user_name}."
             if available:
@@ -348,7 +357,7 @@ def validate_args(args,config,parser=None):
 
     else:
         # If not on a slurm node, we just warn instead of crashing.
-        # This allows users to generate configs on their laptops/head-nodes.
+        # This allows users to generate configs on their laptops.
         print(f"WARNING: Not on a Slurm node. Skipping validation for account '{args['account']}'.")
 
     if args['reservation'] != '':
