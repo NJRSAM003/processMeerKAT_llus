@@ -27,6 +27,7 @@ import sys
 import re
 import config_parser
 import bookkeeping
+import platform
 from shutil import copyfile
 from copy import deepcopy
 import logging
@@ -196,7 +197,7 @@ def parse_args():
     parser.add_argument("-n","--name", metavar="unique", required=False, type=str, default='', help="Unique name to give this pipeline run (e.g. 'run1_'), appended to the start of all job names. [default: ''].")
     parser.add_argument("-d","--dependencies", metavar="list", required=False, type=str, default='', help="Comma-separated list (without spaces) of SLURM job dependencies (only used when nspw=1). [default: ''].")
     parser.add_argument("-e","--exclude", metavar="nodes", required=False, type=str, default='', help="SLURM worker nodes to exclude [default: ''].")
-    parser.add_argument("-A","--account", metavar="group", required=False, type=str, default='b03-idia-ag', help="SLURM accounting group to use (e.g. 'b05-pipelines-ag' - check 'sacctmgr show user $USER cluster=ilifu-slurm20 -s format=account%%30') [default: 'b03-idia-ag'].")
+    parser.add_argument("-A", "--account", metavar="group", required=False, type=str, default=None, help="SLURM accounting group. If omitted, the script detects your default cluster account.")
     parser.add_argument("-r","--reservation", metavar="name", required=False, type=str, default='', help="SLURM reservation to use. [default: ''].")
 
     parser.add_argument("-l","--local", action="store_true", required=False, default=False, help="Build config file locally (i.e. without calling srun) [default: False].")
@@ -304,20 +305,59 @@ def validate_args(args,config,parser=None):
         msg = "The value of [-P --plane] cannot be greater than the tasks per node [-t --ntasks-per-node] ({0}). You input {1}.".format(args['ntasks_per_node'],args['plane'])
         raise_error(config, msg, parser)
 
-    if args['account'] not in ['b03-idia-ag','b05-pipelines-ag']:
-        from platform import node
-        if 'slurm-login' in node() or 'slwrk' in node() or 'compute' in node():
-            accounts=os.popen("for f in $(sacctmgr show user $USER --noheader cluster=ilifu-slurm20 -s format=account%30); do echo -n $f,; done").read()[:-1].split(',')
-            if args['account'] not in accounts:
-                msg = "Accounting group '{0}' not recognised. Please select one of the following from your groups: {1}.".format(args['account'],accounts)
-                for account in accounts:
-                    if args['account'] in account:
-                        msg += ' Perhaps you meant accounting group "{0}".'.format(account)
-                        break
+    # 1. Check if we are on a Slurm node
+    current_hostname = platform.node()
+    is_slurm_node = any(x in current_hostname for x in ['slurm-login', 'slwrk', 'compute'])
+
+    if is_slurm_node:
+        # Check if we are already inside an active Slurm allocation, If SLURM_JOB_ID exists, we skip sacctmgr because the account was already validated by the scheduler when the job was submitted.
+        if os.environ.get('SLURM_JOB_ID'):
+            print(f"INFO: Running inside Slurm Job {os.environ.get('SLURM_JOB_ID')}. Skipping account validation.")
+            return # Exit the validation function early and continue with the script
+        user_name = os.environ.get('USER')
+        def_cmd = f"sacctmgr show user {user_name} --noheader format=DefaultAccount%30"
+        default_acc = os.popen(def_cmd).read().strip()
+
+        # 2. Handle missing or 'None' input, This ensures that if the user forgets -A, it defaults to their default group
+        user_provided_account = args.get('account')
+        if not user_provided_account or str(user_provided_account).lower() == 'none':
+            # Fetch all accounts to provide context to the user
+            list_cmd = f"sacctmgr show user {user_name} --noheader -s format=account%30"
+            available = os.popen(list_cmd).read().split()
+            
+            if default_acc:
+                msg = f"No account specified. Authorized groups: {', '.join(available)}."
+                print(f"INFO: {msg}")
+                args['account'] = default_acc
+            else:
+                msg = "No Slurm account provided and no default detected for your user."
+                if available:
+                    msg += f" Please specify one of your authorized groups: {', '.join(available)}."
                 raise_error(config, msg, parser)
-        else:
-            msg = "Accounting group '{0}' not recognised. You're not using a SLURM node, so cannot query your accounts.".format(args['account'])
+
+        # 3. Direct Validation
+        # Instead of fetching a list, we ask Slurm: "Is this specific account valid for this user?"
+        check_cmd = f"sacctmgr show associations user={user_name} account={args['account']} --noheader"
+        is_valid = os.popen(check_cmd).read().strip()
+
+        if not is_valid:
+            # Only fetch the full list if validation fails (to provide a helpful error)
+            list_cmd = f"sacctmgr show user {user_name} --noheader -s format=account%30"
+            available = os.popen(list_cmd).read().split()
+            msg = f"Accounting group '{args['account']}' is not recognized for user {user_name}."
+            if available:
+                msg += f" Your authorized groups are: {', '.join(available)}."
+            if default_acc:
+                msg += f" Your default is '{default_acc}'."        
             raise_error(config, msg, parser)
+        
+        # Success!
+        print(f"INFO: Using Slurm account '{args['account']}'")
+
+    else:
+        # If not on a slurm node, we just warn instead of crashing.
+        # This allows users to generate configs on their laptops.
+        print(f"WARNING: Not on a Slurm node. Skipping validation for account '{args['account']}'.")
 
     if args['reservation'] != '':
         from platform import node
