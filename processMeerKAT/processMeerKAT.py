@@ -312,7 +312,7 @@ def validate_args(args,config,parser=None):
     if is_slurm_node:
         # Check if we are already inside an active Slurm allocation, If SLURM_JOB_ID exists, we skip sacctmgr because the account was already validated by the scheduler when the job was submitted.
         if os.environ.get('SLURM_JOB_ID'):
-            print(f"INFO: Running inside Slurm Job {os.environ.get('SLURM_JOB_ID')}. Skipping account validation.")
+            print(f"INFO: Running inside Slurm Job {os.environ.get('SLURM_JOB_ID')}. Skipping account validation.", file=sys.stderr)
             return # Exit the validation function early and continue with the script
         user_name = os.environ.get('USER')
         def_cmd = f"sacctmgr show user {user_name} --noheader format=DefaultAccount%30"
@@ -327,7 +327,7 @@ def validate_args(args,config,parser=None):
             
             if default_acc:
                 msg = f"No account specified. Authorized groups: {', '.join(available)}."
-                print(f"INFO: {msg}")
+                print(f"INFO: {msg}", file=sys.stderr)
                 args['account'] = default_acc
             else:
                 msg = "No Slurm account provided and no default detected for your user."
@@ -352,7 +352,7 @@ def validate_args(args,config,parser=None):
             raise_error(config, msg, parser)
         
         # Success!
-        print(f"INFO: Using Slurm account '{args['account']}'")
+        print(f"INFO: Using Slurm account '{args['account']}'", file=sys.stderr)
 
     else:
         # If not on a slurm node, we just warn instead of crashing.
