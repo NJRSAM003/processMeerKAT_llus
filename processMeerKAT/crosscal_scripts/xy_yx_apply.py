@@ -21,16 +21,15 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(format="%(asctime)-15s %(levelname)s: %(message)s", level=logging.INFO)
 
 
-def do_cross_cal_apply(visname, fields, calfiles, caldir):
+def do_cross_cal_apply(visname, fields, calfiles, caldir, polcalfield=None):
 
     if len(fields.gainfields.split(',')) > 1:
         fluxfile = calfiles.fluxfile
     else:
         fluxfile = calfiles.gainfile
 
-    polfield = bookkeeping.polfield_name(visname)
-    if polfield == '':
-        polfield = fields.secondaryfield
+    polfield_raw = bookkeeping.polfield_name(visname, polcalfield)
+    polfield = polfield_raw if polfield_raw else fields.secondaryfield
 
     base = visname.replace('.ms', '')
     xy0ambpfile = os.path.join(caldir, base+'.xyambcal')
@@ -72,7 +71,8 @@ def main(args,taskvals):
     calfiles, caldir = bookkeeping.bookkeeping(visname)
     fields = bookkeeping.get_field_ids(taskvals['fields'])
 
-    do_cross_cal_apply(visname, fields, calfiles, caldir)
+    polcalfield = va(taskvals, 'crosscal', 'polcalfield', str, default='')
+    do_cross_cal_apply(visname, fields, calfiles, caldir, polcalfield)
 
 if __name__ == '__main__':
 

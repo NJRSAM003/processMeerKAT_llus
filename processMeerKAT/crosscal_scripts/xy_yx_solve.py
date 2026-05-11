@@ -52,7 +52,13 @@ def qu_polfield(polfield, visname):
         perley_f = np.array([1050, 1450, 1640])
         pa_polcal = np.array([145, 66, 45])
     else:
-        # This should never happen.
+        pol_params = bookkeeping.get_calibrator_params(polfield)
+        if pol_params is not None:
+            frac_pol = pol_params['frac_pol']
+            pol_angle = pol_params['pol_angle']
+            q = frac_pol * np.cos(2 * np.deg2rad(pol_angle))
+            u = frac_pol * np.sin(2 * np.deg2rad(pol_angle))
+            return q, u
         raise ValueError("Invalid polarization field. Exiting.")
 
     p = np.polyfit(perley_f, perley_frac, deg=2)
@@ -78,12 +84,12 @@ def qu_polfield(polfield, visname):
     return q, u
 
 def do_cross_cal(visname, fields, calfiles, referenceant, caldir,
-        minbaselines, standard):
+        minbaselines, standard, polcalfield=None):
 
-    polfield = bookkeeping.polfield_name(visname)
-    if polfield == '':
-        polfield = fields.secondaryfield
-    else:
+    polfield_raw = bookkeeping.polfield_name(visname, polcalfield)
+    has_known_model = (polfield_raw != '')
+    polfield = polfield_raw if polfield_raw else fields.secondaryfield
+    if has_known_model:
         polqu = qu_polfield(polfield, visname)
 
     if not os.path.isdir(caldir):
@@ -149,11 +155,11 @@ def do_cross_cal(visname, fields, calfiles, referenceant, caldir,
                 listfile = os.path.join(caldir,'fluxscale_xy_yx.txt'))
         bookkeeping.check_file(calfiles.fluxfile)
 
-    if polfield == fields.secondaryfield:
-        # Cannot resolve XY ambiguity so write into final file directly
-        xyfile = xy0pfile
-    else:
+    if has_known_model:
         xyfile = xy0ambpfile
+    else:
+        # Cannot resolve XY ambiguity without a known Q/U model
+        xyfile = xy0pfile
 
     logger.info("\n Starting x-y phase calibration\n -> %s" % xy0ambpfile)
     gaincal(vis=visname, caltable = xyfile, field = polfield,
@@ -165,7 +171,7 @@ def do_cross_cal(visname, fields, calfiles, referenceant, caldir,
             append = False)
     bookkeeping.check_file(xyfile)
 
-    if polfield != fields.secondaryfield:
+    if has_known_model:
         logger.info("\n Check for x-y phase ambiguity.")
         logger.info("Polarization qu is {0}".format(polqu))
         S = xyamb(xytab=xy0ambpfile, qu=polqu, xyout = xy0pfile)
@@ -185,7 +191,8 @@ def main(args,taskvals):
     minbaselines = va(taskvals, 'crosscal', 'minbaselines', int, default=4)
     standard = va(taskvals, 'crosscal', 'standard', str, default='Perley-Butler 2010')
 
-    do_cross_cal(visname, fields, calfiles, refant, caldir, minbaselines, standard)
+    polcalfield = va(taskvals, 'crosscal', 'polcalfield', str, default='')
+    do_cross_cal(visname, fields, calfiles, refant, caldir, minbaselines, standard, polcalfield)
 
 if __name__ == '__main__':
 

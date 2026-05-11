@@ -555,6 +555,21 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
             if len(module) > 0:
                 params['modules'] += "module load {0}\n".format(module)
 
+    # Override resources for per-SPW crosscal scripts only.
+    # Top-level pre/postcal scripts (partition, selfcal, science_image, etc.) are excluded
+    # by name and by nspw > 1 (they are written at the top level for multi-SPW runs).
+    _toplevel = ['partition', 'selfcal', 'science_image', 'plotcal_spw', 'concat']
+    if nspw <= 1 and not any(s in script for s in _toplevel):
+        params['partition'] = 'Main'
+        params['mem'] = 150
+        params['cpus'] = 1
+        if 'quick_tclean' in script:
+            params['tasks'] = 32
+            params['mem'] = 232
+        elif mpi_wrapper != 'srun':
+            # Threadsafe MPI scripts: cap at 8 tasks
+            params['tasks'] = 8
+
     contents = """#!/bin/bash{array}{exclude}{reservation}
     #SBATCH --account={account}
     #SBATCH --nodes={nodes}
