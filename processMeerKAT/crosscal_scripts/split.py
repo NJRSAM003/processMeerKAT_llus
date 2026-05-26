@@ -54,12 +54,18 @@ def main(args,taskvals):
     timeavg = va(taskvals, 'crosscal', 'timeavg', str, default='8s')
     keepmms = va(taskvals, 'crosscal', 'keepmms', bool)
 
-    msmd.open(visname)
+    try:
+        msmd.open(visname)
+    except Exception:
+        pass
     newvis = split_vis(visname, spw, fields, specavg, timeavg, keepmms, badants)
 
     config_parser.overwrite_config(args['config'], conf_dict={'vis' : "'{0}'".format(newvis)}, conf_sec='data')
     config_parser.overwrite_config(args['config'], conf_dict={'crosscal_vis': "'{0}'".format(visname)}, conf_sec='run', sec_comment='# Internal variables for pipeline execution')
-    msmd.done()
+    try:
+        msmd.done()
+    except Exception:
+        pass
 
 if __name__ == '__main__':
 

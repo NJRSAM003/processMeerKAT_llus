@@ -24,8 +24,13 @@ def run_tclean(visname, fields, keepmms):
     """
 
     #Store bandwidth in MHz
-    msmd.open(visname)
-    BW = msmd.bandwidths(-1).sum()/1e6
+    try:
+        msmd.open(visname)
+        BW = msmd.bandwidths(-1).sum()/1e6
+    except Exception:
+        import re
+        m = re.search(r'(\d+(?:\.\d+)?)~(\d+(?:\.\d+)?)MHz', visname)
+        BW = float(m.group(2)) - float(m.group(1)) if m else 200.0
 
     if keepmms == True:
         extn = 'mms'
@@ -97,7 +102,10 @@ def run_tclean(visname, fields, keepmms):
 
                 exportfits(imagename=secimname+'.image'+suffix, fitsimage=secimname+'.fits')
 
-    msmd.done()
+    try:
+        msmd.done()
+    except Exception:
+        pass
 
 
 def main(args,taskvals):

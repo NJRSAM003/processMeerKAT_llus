@@ -564,11 +564,17 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
         params['mem'] = 150
         params['cpus'] = 1
         if 'quick_tclean' in script:
-            params['tasks'] = 32
-            params['mem'] = 232
+            params['tasks'] = 6
+            params['cpus'] = 6
+            params['time'] = '03:00:00'
         elif mpi_wrapper != 'srun':
             # Threadsafe MPI scripts: cap at 8 tasks
             params['tasks'] = 8
+
+    # concat is I/O-bound not compute-bound — 1 task prevents I/O contention timeouts
+    if 'concat' in script:
+        params['tasks'] = 1
+        params['cpus'] = 1
 
     contents = """#!/bin/bash{array}{exclude}{reservation}
     #SBATCH --account={account}
@@ -585,6 +591,7 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
 
     export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
     {modules}
+    source ~/processMeerKAT_fork/setup.sh
 
     {command}"""
 
@@ -1451,16 +1458,73 @@ def spw_split(spw,nspw,config,mem,badfreqranges,MS,partition,createmms=True,remo
         New nspw, potentially a lower value than input (if any SPWs completely encompassed by badfreqranges)."""
 
     if get_spw_bounds(spw) != None:
-        #Write nspw frequency ranges
+        #Write nspw frequency ranges respecting badfreqranges
         low,high,unit,func = get_spw_bounds(spw)
-        interval=func((high-low)/float(nspw))
-        lo=linspace(low,high-interval,nspw)
-        hi=linspace(low+interval,high,nspw)
-        SPWs=[]
-
-        #Remove SPWs entirely encompassed by bad frequency ranges (only for MHz unit)
-        for i in range(len(lo)):
-            SPWs.append('{0}{1}~{2}{3}'.format(SPW_PREFIX, func(lo[i]),func(hi[i]),unit))
+        
+        if unit == 'MHz' and badfreqranges:
+            # Split frequency range into good segments avoiding badfreqranges
+            bad_ranges = []
+            for freq in badfreqranges:
+                bad_low, bad_high = get_spw_bounds('{0}{1}'.format(SPW_PREFIX, freq))[0:2]
+                bad_ranges.append((bad_low, bad_high))
+            bad_ranges.sort()
+            
+            # Build list of good frequency segments
+            good_segments = []
+            current = low
+            for bad_low, bad_high in bad_ranges:
+                if current < bad_low:
+                    good_segments.append((current, bad_low))
+                current = max(current, bad_high)
+            if current < high:
+                good_segments.append((current, high))
+            
+            # Distribute nspw SPWs across good segments proportionally
+            SPWs = []
+            if good_segments:
+                total_bw = sum(seg[1] - seg[0] for seg in good_segments)
+                spws_allocated = 0
+                
+                for seg_idx, (seg_low, seg_high) in enumerate(good_segments):
+                    is_last = (seg_idx == len(good_segments) - 1)
+                    seg_bw = seg_high - seg_low
+                    # Allocate SPWs proportional to segment bandwidth
+                    if is_last:
+                        spws_for_seg = nspw - spws_allocated
+                    else:
+                        spws_for_seg = max(1, int(round(nspw * seg_bw / total_bw)))
+                    
+                    if spws_for_seg >= 1:
+                        interval = func(seg_bw / float(spws_for_seg))
+                        if spws_for_seg == 1:
+                            # Single SPW for this segment
+                            seg_lo = [seg_low]
+                            seg_hi = [seg_high]
+                        else:
+                            seg_lo = linspace(seg_low, seg_high - interval, spws_for_seg)
+                            seg_hi = linspace(seg_low + interval, seg_high, spws_for_seg)
+                        
+                        for i in range(len(seg_lo)):
+                            SPWs.append('{0}{1}~{2}{3}'.format(SPW_PREFIX, func(seg_lo[i]), func(seg_hi[i]), unit))
+                        
+                        spws_allocated += spws_for_seg
+            else:
+                # No good segments, use full range
+                interval = func((high - low) / float(nspw))
+                lo = linspace(low, high - interval, nspw)
+                hi = linspace(low + interval, high, nspw)
+                SPWs = []
+                for i in range(len(lo)):
+                    SPWs.append('{0}{1}~{2}{3}'.format(SPW_PREFIX, func(lo[i]), func(hi[i]), unit))
+        
+        else:
+            # Original logic if no badfreqranges or non-MHz unit
+            interval = func((high - low) / float(nspw))
+            lo = linspace(low, high - interval, nspw)
+            hi = linspace(low + interval, high, nspw)
+            SPWs = []
+            for i in range(len(lo)):
+                SPWs.append('{0}{1}~{2}{3}'.format(SPW_PREFIX, func(lo[i]), func(hi[i]), unit))
 
     elif ',' in spw:
         SPWs = spw.split(',')
