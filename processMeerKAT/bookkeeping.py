@@ -320,7 +320,7 @@ def get_selfcal_args(vis,loop,nloops,nterms,deconvolver,discard_nloops,calmode,o
     msmd.open(tmpvis)
 
     visbase = os.path.split(vis.rstrip('/ '))[1] # Get only vis name, not entire path
-    visbase = re.sub('\.\d+\.*\d*\~\d+\.*\d*[a-z,A-Z]?[Hz,hz,hZ,HZ]*\.','.',visbase) # Strip any SPWs from basename (when running outlier imaging separately per SPW)
+    visbase = re.sub(r'\.\d+\.*\d*\~\d+\.*\d*[a-z,A-Z]?[Hz,hz,hZ,HZ]*\.','.',visbase) # Strip any SPWs from basename (when running outlier imaging separately per SPW)
     targetfields = config_parser.get_key(config_parser.parse_args()['config'], 'fields', 'targetfields')
 
     #Force taking first target field (relevant for writing outliers.txt at beginning of pipeline)
