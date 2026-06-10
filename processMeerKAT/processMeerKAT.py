@@ -741,18 +741,18 @@ def write_spw_master(filename,config,SPWs,precal_scripts,postcal_scripts,submit,
     do = """echo "for f in {%s,}; do if [ -d \\$f ]; then cd \\$f; ./%s/%s%s; cd ..; else echo Directory \\$f doesn\\'t exist; fi; done;%s"""
     suffix = '' if toplevel else ' \"'
     write_bash_job_script(master, killScript, extn, do % (SPWs,dir,killScript,extn,suffix), 'kill all the jobs', dir=dir,prefix=prefix)
-    write_bash_job_script(master, cleanupScript, extn, do % (SPWs,dir,cleanupScript,extn,' \"'), 'remove the MMSs/MSs within SPW directories (after pipeline has run), while leaving any concatenated data at the top level', dir=dir)
+    write_bash_job_script(master, cleanupScript, extn, do % (SPWs,dir,cleanupScript,extn,' \"'), r'remove the MMSs/MSs within SPW directories \(after pipeline has run\), while leaving any concatenated data at the top level', dir=dir)
 
     do = """echo "counter=1; for f in {%s,}; do echo -n SPW \\#\\$counter:; echo -n ' '; if [ -d \\$f ]; then cd \\$f; pwd; ./%s/%s%s %s; cd ..; else echo Directory \\$f doesn\\'t exist; fi; counter=\\$((counter+1)); echo '%s'; done; """
     if toplevel:
         do += "echo -n 'All SPWs: '; pwd; "
     else:
         do += ' \"'
-    write_bash_job_script(master, summaryScript, extn, do % (SPWs,dir,summaryScript,extn,"\\$@ | grep -v 'PENDING\\|COMPLETED'",header), 'view the progress (for running or failed jobs)', dir=dir,prefix=prefix)
-    write_bash_job_script(master, fullSummaryScript, extn, do % (SPWs,dir,summaryScript,extn,'\\$@',header), 'view the progress (for all jobs)', dir=dir,prefix=prefix)
+    write_bash_job_script(master, summaryScript, extn, do % (SPWs,dir,summaryScript,extn,"\\$@ | grep -v 'PENDING\\|COMPLETED'",header), r'view the progress \(for running or failed jobs\)', dir=dir,prefix=prefix)
+    write_bash_job_script(master, fullSummaryScript, extn, do % (SPWs,dir,summaryScript,extn,'\\$@',header), r'view the progress \(for all jobs\)', dir=dir,prefix=prefix)
     header = '------------------------------------------------------------------------------------------' + '-'*pad_length
-    write_bash_job_script(master, errorScript, extn, do % (SPWs,dir,errorScript,extn,'',header), 'find errors (after pipeline has run)', dir=dir,prefix=prefix)
-    write_bash_job_script(master, timingScript, extn, do % (SPWs,dir,timingScript,extn,'',header), 'display start and end timestamps (after pipeline has run)', dir=dir,prefix=prefix)
+    write_bash_job_script(master, errorScript, extn, do % (SPWs,dir,errorScript,extn,'',header), r'find errors \(after pipeline has run\)', dir=dir,prefix=prefix)
+    write_bash_job_script(master, timingScript, extn, do % (SPWs,dir,timingScript,extn,'',header), r'display start and end timestamps \(after pipeline has run\)', dir=dir,prefix=prefix)
 
     #Close master submission script and make executable
     master.close()
@@ -911,15 +911,15 @@ def write_all_bash_jobs_scripts(master,extn,IDs,dir='jobScripts',echo=True,prefi
     do = """echo sacct -j ${0} --units=G -o "JobID%-15,JobName%-{1},Partition,Elapsed,NNodes%6,NTasks%6,NCPUS%5,MaxDiskRead,MaxDiskWrite,NodeList%20,TotalCPU,CPUTime,MaxRSS,State,ExitCode" \\$@ """.format(IDs,15+pad_length)
     write_bash_job_script(master, summaryScript, extn, do, 'view the progress', dir=dir, echo=echo)
     do = """echo "for ID in {$%s,}; do files=\\$(ls %s/*\\$ID* 2>/dev/null | wc -l); if [ \\$((files)) != 0 ]; then ls %s/*\\$ID*; cat %s/*\\$ID* | grep -i 'severe\\|error' | grep -vi 'mpi\\|The selected table has zero rows\\|MeasTable::dUTC(Double)'; else echo %s/*\\$ID* logs don\\'t exist \\(yet\\); fi; done" """ % (IDs,LOG_DIR,LOG_DIR,LOG_DIR,LOG_DIR)
-    write_bash_job_script(master, errorScript, extn, do, 'find errors (after pipeline has run)', dir=dir, echo=echo)
+    write_bash_job_script(master, errorScript, extn, do, r'find errors \(after pipeline has run\)', dir=dir, echo=echo)
     do = """echo "for ID in {$%s,}; do files=\\$(ls %s/*\\$ID* 2>/dev/null | wc -l); if [ \\$((files)) != 0 ]; then logs=\\$(ls %s/*\\$ID* | sort -V); ls -f \\$logs; cat \\$(ls -tU \\$logs) | grep INFO | head -n 1 | cut -d 'I' -f1; cat \\$(ls -tr \\$logs) | grep INFO | tail -n 1 | cut -d 'I' -f1; else echo %s/*\\$ID* logs don\\'t exist \\(yet\\); fi; done" """ % (IDs,LOG_DIR,LOG_DIR,LOG_DIR)
-    write_bash_job_script(master, timingScript, extn, do, 'display start and end timestamps (after pipeline has run)', dir=dir, echo=echo)
+    write_bash_job_script(master, timingScript, extn, do, r'display start and end timestamps \(after pipeline has run\)', dir=dir, echo=echo)
 
     # Create copy so original is unmodified
     cleanup_kwargs = deepcopy(slurm_kwargs)
     cleanup_kwargs['partition'] = 'Devel'
     do = """echo "echo Removing the following: \\$(ls -d *ms); %s rm -r *ms" """ % srun(cleanup_kwargs, qos=True, time=10, mem=0)
-    write_bash_job_script(master, cleanupScript, extn, do, 'remove MSs/MMSs from this directory (after pipeline has run)', dir=dir, echo=echo)
+    write_bash_job_script(master, cleanupScript, extn, do, r'remove MSs/MMSs from this directory \(after pipeline has run\)', dir=dir, echo=echo)
 
 def write_bash_job_script(master,filename,extn,do,purpose,dir='jobScripts',echo=True,prefix=''):
 
