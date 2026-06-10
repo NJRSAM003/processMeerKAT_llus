@@ -23,6 +23,116 @@ from katbeam import JimBeam
 from casatools import image
 ia = image()
 
+try:
+    import bdsf
+except ImportError:
+    bdsf = None
+
+
+def _versioned(path):
+    """Return path unchanged if it doesn't exist, else path_2, path_3, ..."""
+    if not os.path.exists(path):
+        return path
+    version = 2
+    while True:
+        candidate = '{0}_{1}'.format(path, version)
+        if not os.path.exists(candidate):
+            return candidate
+        version += 1
+
+
+def _unmask_all(imagepath):
+    """Strip any inherited mask so downstream immath sees every pixel as valid."""
+    ia.open(imagepath)
+    ia.calcmask("T")
+    ia.close()
+
+
+def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
+    """
+    Build a noise-thresholded spectral-index (alpha) image from an mtmfs run.
+
+    Skipped if deconvolver != 'mtmfs' (no Taylor terms) or if stokes is 'I' alone
+    (CASA's tclean already auto-writes .alpha + .alpha.error in that case).
+
+    For multi-Stokes runs (e.g. 'IQUV') we extract the Stokes I plane from each
+    Taylor-term image first, since alpha is fundamentally a Stokes-I quantity.
+
+    Pipeline:
+      1. alpha = tt1 / tt0
+      2. alpha_error = sqrt((resid_tt1/tt0)^2 + (alpha * resid_tt0/tt0)^2)
+      3. PyBDSF on alpha_error to produce a 2D RMS map (rms_map=True)
+      4. Clip alpha_error pixel-wise where alpha_error >= 5 * RMS_map
+      5. Final alpha mask: keep alpha where |alpha| > alpha_nsigma * clipped alpha_error
+    """
+    if deconvolver != 'mtmfs':
+        logger.info("Skipping alpha image: deconvolver='{0}' (mtmfs required).".format(deconvolver))
+        return
+    if stokes.upper() == 'I':
+        # CASA's tclean already wrote .alpha + .alpha.error during restoration.
+        return
+    if bdsf is None:
+        logger.warning("Skipping alpha image: pybdsf not available in this environment.")
+        return
+
+    img0   = imagename + '.image.tt0'
+    img1   = imagename + '.image.tt1'
+    resid0 = imagename + '.residual.tt0'
+    resid1 = imagename + '.residual.tt1'
+
+    for f in [img0, img1, resid0, resid1]:
+        if not os.path.exists(f):
+            logger.warning("Skipping alpha image: '{0}' not found.".format(f))
+            return
+
+    # Extract the Stokes I plane from each Taylor-term image — alpha is a Stokes-I concept.
+    work = {}
+    for label, src in [('img0', img0), ('img1', img1), ('resid0', resid0), ('resid1', resid1)]:
+        si = src + '.StokesI'
+        if not os.path.exists(si):
+            imsubimage(imagename=src, outfile=si, stokes='I')
+        work[label] = si
+
+    alpha_out      = _versioned(imagename + '.alpha.image')
+    alpha_err_out  = _versioned(imagename + '.alpha.error.image')
+    alpha_err_rms  = imagename + '.alpha.error.rms'
+    alpha_clip_out = _versioned(imagename + '.alpha.error.5sigma.clip.image')
+    alpha_sig_out  = _versioned(imagename + '.alpha.{0}sigma.image'.format(int(alpha_nsigma)))
+
+    logger.info("Building alpha map -> {0}".format(os.path.basename(alpha_out)))
+    immath(imagename=[work['img1'], work['img0']], expr='IM0/IM1', outfile=alpha_out)
+    _unmask_all(alpha_out)
+
+    logger.info("Building alpha error map -> {0}".format(os.path.basename(alpha_err_out)))
+    immath(imagename=[work['resid1'], work['img1'], work['img0'], work['resid0']],
+           expr='sqrt((IM0/IM2)^2 + (((IM1/IM2)*IM3/IM2)^2))',
+           outfile=alpha_err_out)
+    _unmask_all(alpha_err_out)
+
+    # PyBDSF wants a FITS file for header stability (matches master's selfcal pattern).
+    fitsname = alpha_err_out + '.fits'
+    if not os.path.exists(fitsname):
+        exportfits(imagename=alpha_err_out, fitsimage=fitsname)
+
+    logger.info("Running PyBDSF for 2D RMS map of alpha error -> {0}".format(os.path.basename(alpha_err_rms)))
+    img = bdsf.process_image(fitsname, adaptive_rms_box=True,
+        rms_box_bright=(40, 5), advanced_opts=True, mean_map='map',
+        rms_box=(100, 30), rms_map=True, thresh='hard', thresh_isl=3.0, thresh_pix=5.0,
+        blank_limit=1e-10)
+    img.export_image(outfile=alpha_err_rms, img_type='rms', img_format='casa', clobber=True)
+
+    logger.info("Clipping alpha error pixel-wise at 5 x RMS -> {0}".format(os.path.basename(alpha_clip_out)))
+    immath(imagename=[alpha_err_out, alpha_err_rms],
+           expr='iif(IM0 < 5*IM1, IM0, 0/0)',
+           outfile=alpha_clip_out,
+           imagemd=work['img0'])
+
+    logger.info("Masking alpha where |alpha| > {0} x clipped error -> {1}".format(alpha_nsigma, os.path.basename(alpha_sig_out)))
+    immath(imagename=[alpha_out, alpha_clip_out],
+           expr='iif(abs(IM0) > {0}*IM1, IM0, 0/0)'.format(alpha_nsigma),
+           outfile=alpha_sig_out,
+           imagemd=work['img0'])
+
 
 def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):
     """
@@ -108,7 +218,9 @@ def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):
     ia.close()
 
 
-def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms, gridder, deconvolver, restoringbeam, stokes, mask, rmsmap, outlierfile, keepmms, pbthreshold, pbband):
+def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms, gridder, deconvolver, restoringbeam, stokes, mask, rmsmap, outlierfile, keepmms, pbthreshold, pbband,
+                  usemask='user', sidelobethreshold=0.5, noisethreshold=5.0, lownoisethreshold=0.01, negativethreshold=0.0,
+                  alpha_nsigma=1.0):
 
     visbase = os.path.split(vis.rstrip('/ '))[1] # Get only vis name, not entire path
     extn = '.ms' if keepmms==False else '.mms'
@@ -128,15 +240,37 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
 
     if not os.path.exists(imname):
 
-        tclean(vis=vis, selectdata=False, datacolumn='corrected', imagename=imagename,
+        tclean_kwargs = dict(
+            vis=vis, selectdata=False, datacolumn='corrected', imagename=imagename,
             imsize=imsize, cell=cell, stokes=stokes, gridder=gridder, specmode='mfs',
-            wprojplanes = wprojplanes, deconvolver = deconvolver, restoration=True,
-            weighting='briggs', robust = robust, niter=niter, scales=multiscale,
-            threshold=threshold, nterms=nterms, calcpsf=True, mask=mask, outlierfile=outlierfile,
-            pblimit=-1, restoringbeam=restoringbeam, parallel = True)
+            wprojplanes=wprojplanes, deconvolver=deconvolver, restoration=True,
+            weighting='briggs', robust=robust, niter=niter, scales=multiscale,
+            threshold=threshold, nterms=nterms, calcpsf=True, outlierfile=outlierfile,
+            pblimit=-1, restoringbeam=restoringbeam, parallel=True,
+        )
+
+        if usemask == 'auto-multithresh':
+            logger.info("Using auto-multithresh masking with sidelobethreshold={0}, noisethreshold={1}, lownoisethreshold={2}, negativethreshold={3}".format(
+                sidelobethreshold, noisethreshold, lownoisethreshold, negativethreshold))
+            tclean_kwargs.update(dict(
+                usemask='auto-multithresh',
+                mask='',
+                sidelobethreshold=sidelobethreshold,
+                noisethreshold=noisethreshold,
+                lownoisethreshold=lownoisethreshold,
+                negativethreshold=negativethreshold,
+            ))
+        else:
+            tclean_kwargs.update(dict(usemask='user', mask=mask))
+
+        tclean(**tclean_kwargs)
 
     else:
         logger.warning('Output image "{0}" already exists. Skipping tclean step and applying pb correction.'.format(imname))
+
+    # Produce a spectral-index image only when polarisation imaging is involved
+    # (stokes != 'I'); CASA already auto-writes alpha+error for plain Stokes-I mtmfs runs.
+    make_alpha(imagename, deconvolver, stokes, alpha_nsigma=alpha_nsigma)
 
     if len(stokes) > 1 and 'I' in stokes.upper():
         logger.warning('Output image "{0}" includes multiple Stokes, but katbeam only applicable to Stokes I. Selecting Stokes I and applying PB correction.'.format(imname))
