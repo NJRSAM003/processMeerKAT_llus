@@ -208,20 +208,15 @@ def check_scans(MS,nodes,tasks,dopol):
     if abs(nodes * tasks - limit) > 0.1*limit:
         logger.warning('The number of threads ({0} node(s) x {1} task(s) = {2}) is not ideal compared to the number of scans ({3}) for "{4}".'.format(nodes,tasks,nodes*tasks,nscans,MS))
 
-        #Start with 8/16 tasks on one node, and increase count of nodes (and then tasks per node) until limit reached
+        #Keep nodes fixed at 1 and only bump tasks-per-node until the limit is reached.
         nodes = 1
         tasks = 16 if not dopol else 8
 
         if tasks > limit:
             tasks = limit
 
-        while nodes * tasks < limit:
-            if nodes < processMeerKAT.TOTAL_NODES_LIMIT:
-                nodes += 1
-            elif tasks < processMeerKAT.NTASKS_PER_NODE_LIMIT:
-                tasks += 1
-            else:
-                break
+        while nodes * tasks < limit and tasks < processMeerKAT.NTASKS_PER_NODE_LIMIT:
+            tasks += 1
 
         logger.warning('Config file has been updated to use {0} node(s) and {1} task(s) per node.'.format(nodes,tasks))
         if nodes*tasks != limit:
@@ -428,9 +423,9 @@ def main():
     ms_fields = set(msmd.fieldnames())
     detected = sorted({label for label, names in KNOWN_POLCALS.items() if ms_fields.intersection(names)})
     if detected:
-        polcal_comment = "# {0} already in MS — this fallback is not required.".format(', '.join(detected))
+        polcal_comment = "# {0} already in MS — this fallback is not required (leave this field empty).".format(', '.join(detected))
     else:
-        polcal_comment = "# No canonical pol calibrator (3C286/3C138/3C48/J1130-1449) found in MS. Set this to a phase/secondary calibrator name (e.g. {0}) to use the L-band catalogue model for XY ambiguity resolution.".format(fields.get('phasecalfield', "''").strip("'"))
+        polcal_comment = "# No canonical pol calibrator (3C286/3C138/3C48/J1130-1449) found in MS. Set this to a phase/secondary calibrator name (e.g. {0}) to use the L-band catalogue model for XY ambiguity resolution (leave this field empty if you don't want the fallback).".format(fields.get('phasecalfield', "''").strip("'"))
     config_parser.overwrite_config(args.config, conf_dict={'polcalfield' : "''  {0}".format(polcal_comment)}, conf_sec='crosscal')
 
     msmd.done()
