@@ -415,6 +415,24 @@ def main():
     config_parser.overwrite_config(args.config, conf_dict=fields, conf_sec='fields')
     config_parser.overwrite_config(args.config, conf_dict={'spw' : "'{0}'".format(SPW)}, conf_sec='crosscal')
 
+    # Decide what `polcalfield` should look like, based on which canonical pol
+    # calibrators (if any) are already in this MS. The value itself stays empty
+    # — it's a fallback only used when no canonical pol cal exists — but the
+    # inline comment is set so the user sees at a glance why it is or isn't needed.
+    KNOWN_POLCALS = {
+        '3C286': ["3C286", "1328+307", "1331+305", "J1331+3030"],
+        '3C138': ["3C138", "0518+165", "0521+166", "J0521+1638"],
+        '3C48':  ["3C48",  "0134+329", "0137+331", "J0137+3309"],
+        'J1130-1449': ["J1130-1449"],
+    }
+    ms_fields = set(msmd.fieldnames())
+    detected = sorted({label for label, names in KNOWN_POLCALS.items() if ms_fields.intersection(names)})
+    if detected:
+        polcal_comment = "# {0} already in MS — this fallback is not required.".format(', '.join(detected))
+    else:
+        polcal_comment = "# No canonical pol calibrator (3C286/3C138/3C48/J1130-1449) found in MS. Set this to a phase/secondary calibrator name (e.g. {0}) to use the L-band catalogue model for XY ambiguity resolution.".format(fields.get('phasecalfield', "''").strip("'"))
+    config_parser.overwrite_config(args.config, conf_dict={'polcalfield' : "''  {0}".format(polcal_comment)}, conf_sec='crosscal')
+
     msmd.done()
 
 if __name__ == "__main__":

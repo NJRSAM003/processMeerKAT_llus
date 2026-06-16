@@ -40,6 +40,7 @@ scripts = [ ('validate_input.py',False,''),
             ('quick_tclean.py',True,'')]
 
 [crosscal]
+polcalfield = ''                  # Fallback XY-phase calibrator: only used when no canonical pol calibrator (3C286/3C138/3C48/J1130-1449) is in the MS. Auto-annotated by -B based on field detection.
 minbaselines = 4                  # Minimum number of baselines to use while calibrating
 chanbin = 1                       # Number of channels to average before calibration (during partition)
 width = 1                         # Number of channels to (further) average after calibration (during split)
@@ -72,7 +73,7 @@ calmode = ['','p']                # '' to skip solving (will also exclude mask f
 solint = ['','1min']
 uvrange = ''                      # uv range cutoff for gaincal
 flag = True                       # Flag residual column after selfcal?
-gaintype = 'G'                    # Use 'T' for polarisation on linear feeds (e.g. MeerKAT)
+gaintype = 'T'                    # Use 'T' for polarisation on linear feeds (e.g. MeerKAT); 'G' for circular feeds (e.g. VLA)
 discard_nloops = 0                # Discard this many selfcal solutions (e.g. from quick and dirty image) during subsequent loops (only considers when calmode !='')
 outlier_threshold = 0.0           # S/N values if >= 1.0, otherwise Jy
 outlier_radius = 0.0              # Radius in degrees for identifying outliers in RACS
