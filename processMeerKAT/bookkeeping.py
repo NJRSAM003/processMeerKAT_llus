@@ -253,7 +253,7 @@ def get_selfcal_params():
     if params['dopol'] and 'G' in params['gaintype']:
         logger.warning("dopol is True, but gaintype includes 'G'. Use gaintype='T' for polarisation on linear feeds (e.g. MeerKAT).")
 
-    single_args = ['nloops','loop','discard_nloops','outlier_threshold','outlier_radius'] #need to be 1 long (i.e. not a list)
+    single_args = ['nloops','loop','discard_nloops','outlier_threshold','outlier_radius','atrous_do'] #need to be 1 long (i.e. not a list)
     gaincal_args = ['solint','calmode','gaintype','flag'] #need to be nloops long
     list_args = ['imsize'] #allowed to be lists of lists
 

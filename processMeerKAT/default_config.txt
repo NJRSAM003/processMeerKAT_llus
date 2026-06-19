@@ -77,6 +77,7 @@ gaintype = 'T'                    # Use 'T' for polarisation on linear feeds (e.
 discard_nloops = 0                # Discard this many selfcal solutions (e.g. from quick and dirty image) during subsequent loops (only considers when calmode !='')
 outlier_threshold = 0.0           # S/N values if >= 1.0, otherwise Jy
 outlier_radius = 0.0              # Radius in degrees for identifying outliers in RACS
+atrous_do = False                 # Enable PyBDSF wavelet (a-trous) decomposition during selfcal source finding (set True to better recover extended emission)
 
 [image]
 cell = '1.5arcsec'
