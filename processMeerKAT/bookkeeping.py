@@ -244,6 +244,7 @@ def get_selfcal_params():
     # Parse config file
     taskvals, config = config_parser.parse_config(args['config'])
     params = taskvals['selfcal']
+    params.setdefault('atrous_do', False)  # Backward-compat: configs predating this key default to off
     other_params = list(params.keys())
 
     params['vis'] = taskvals['data']['vis']
