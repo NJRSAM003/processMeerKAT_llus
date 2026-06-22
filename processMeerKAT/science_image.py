@@ -106,7 +106,8 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     logger.info("Building alpha error map -> {0}".format(os.path.basename(alpha_err_out)))
     immath(imagename=[work['resid1'], work['img1'], work['img0'], work['resid0']],
            expr='sqrt((IM0/IM2)^2 + (((IM1/IM2)*IM3/IM2)^2))',
-           outfile=alpha_err_out)
+           outfile=alpha_err_out,
+           imagemd=work['img0'])  # Inherit beam/coordsys from restored Stokes I (residuals carry no restoring beam) so PyBDSF can read BMAJ/BMIN/BPA
     _unmask_all(alpha_err_out)
 
     # PyBDSF wants a FITS file for header stability (matches master's selfcal pattern).
