@@ -849,6 +849,11 @@ def write_master(filename,config,scripts=[],submit=False,dir='jobScripts',pad_le
             master.write('echo Submitting {0} to SLURM queue with following command\necho {1} {0}.\n'.format(script,command))
         master.write("IDs+=,$({0} {1} | cut -d ' ' -f4)\n".format(command,script))
 
+    #Submit a lightweight job that removes stray casa*.log files from the working directory once all jobs finish.
+    #Uses afterany so it runs even if an upstream job fails. Not added to $IDs so it doesn't affect the kill/summary scripts.
+    master.write('\n#Remove casa*.log files from the working directory after all jobs complete\n')
+    master.write('sbatch -d afterany:${{IDs//,/:}} --kill-on-invalid-dep=yes -J casa_log_cleanup --partition=Devel --account={0} --time=10 --mem=1GB -o logs/%x-%j.out -e logs/%x-%j.err --wrap="rm -f casa*.log" > /dev/null\n'.format(slurm_kwargs['account']))
+
     master.write('\n#Output message and create {0} directory\n'.format(dir))
     master.write('echo Submitted sbatch jobs with following IDs: $IDs\n') #DON'T CHANGE as this output is relied on by bash sed expression in write_spw_master()
     master.write('mkdir -p {0}\n'.format(dir))
