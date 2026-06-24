@@ -103,6 +103,8 @@ noisethreshold = 5.0              # only used when usemask = 'auto-multithresh'
 lownoisethreshold = 0.01          # only used when usemask = 'auto-multithresh'
 negativethreshold = 0.0           # only used when usemask = 'auto-multithresh'
 alpha_nsigma = 1.0                # sigma cut for the final alpha mask (only used when stokes != 'I' to produce a spectral-index image)
+spw_cube = False                  # Image each spectral window separately (into SPWs_full_stokes/) instead of one full-bandwidth averaged image; use stokes='IQUV' for full-Stokes per-SPW imaging
+spwid = ''                        # Comma-separated SPW IDs to image when spw_cube=True (e.g. '0,1,2'); '' = all SPWs in the MS. Frequency labels are auto-derived from the MS
 
 [run]                             # Internal variables for pipeline execution
 continue = True

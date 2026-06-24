@@ -20,7 +20,7 @@ logging.basicConfig(format="%(asctime)-15s %(levelname)s: %(message)s")
 
 import shutil
 from katbeam import JimBeam
-from casatools import image
+from casatools import image, msmetadata
 ia = image()
 
 try:
@@ -219,20 +219,35 @@ def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):
     ia.close()
 
 
-def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms, gridder, deconvolver, restoringbeam, stokes, mask, rmsmap, outlierfile, keepmms, pbthreshold, pbband,
-                  usemask='user', sidelobethreshold=0.5, noisethreshold=5.0, lownoisethreshold=0.01, negativethreshold=0.0,
-                  alpha_nsigma=1.0):
+def _resolve_spws(vis, spwid):
+    """Return (spw_ids, freq_labels) for the SPWs to image.
 
-    visbase = os.path.split(vis.rstrip('/ '))[1] # Get only vis name, not entire path
-    extn = '.ms' if keepmms==False else '.mms'
-    imagename = visbase.replace(extn, '.science_image') # Images will be produced in $CWD
+    spw_ids are the integer SPW IDs in the MS; freq_labels are 'LO-HIMHz' strings
+    derived from each SPW's channel frequency range (so there's no parallel
+    freq-band list to maintain). If spwid is '', every SPW in the MS is used.
+    """
+    msmd = msmetadata()
+    msmd.open(vis)
+    try:
+        if spwid.strip() != '':
+            ids = [int(s) for s in spwid.split(',') if s.strip() != '']
+        else:
+            ids = list(range(msmd.nspw()))
+        labels = []
+        for sid in ids:
+            freqs = msmd.chanfreqs(sid)  # Hz
+            labels.append('{0:.0f}-{1:.0f}MHz'.format(freqs.min() / 1e6, freqs.max() / 1e6))
+    finally:
+        msmd.done()
+    return ids, labels
 
-    if os.path.exists(outlierfile) and open(outlierfile).read() == '':
-        outlierfile = ''
 
-    if not (type(threshold) is str and 'Jy' in threshold) and threshold > 1 and os.path.exists(rmsmap):
-        stats = imstat(imagename=rmsmap)
-        threshold *= stats['min'][0]
+def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms,
+                     gridder, deconvolver, restoringbeam, stokes, mask, outlierfile, pbthreshold, pbband,
+                     usemask, sidelobethreshold, noisethreshold, lownoisethreshold, negativethreshold, alpha_nsigma):
+    """Run tclean (+ alpha + PB correction) for a single image / SPW selection.
+
+    spw is a tclean spw-selection string ('' for the whole band, or e.g. '0')."""
 
     if deconvolver == 'mtmfs':
         imname = imagename + '.image.tt0'
@@ -242,7 +257,7 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
     if not os.path.exists(imname):
 
         tclean_kwargs = dict(
-            vis=vis, selectdata=False, datacolumn='corrected', imagename=imagename,
+            vis=vis, selectdata=False, datacolumn='corrected', imagename=imagename, spw=spw,
             imsize=imsize, cell=cell, stokes=stokes, gridder=gridder, specmode='mfs',
             wprojplanes=wprojplanes, deconvolver=deconvolver, restoration=True,
             weighting='briggs', robust=robust, niter=niter, scales=multiscale,
@@ -282,6 +297,44 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
 
     if 'I' in stokes.upper():
         do_pb_corr(imname, pbthreshold, pbband)
+
+
+def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms, gridder, deconvolver, restoringbeam, stokes, mask, rmsmap, outlierfile, keepmms, pbthreshold, pbband,
+                  usemask='user', sidelobethreshold=0.5, noisethreshold=5.0, lownoisethreshold=0.01, negativethreshold=0.0,
+                  alpha_nsigma=1.0, spw_cube=False, spwid=''):
+
+    visbase = os.path.split(vis.rstrip('/ '))[1] # Get only vis name, not entire path
+    extn = '.ms' if keepmms==False else '.mms'
+    imagebase = visbase.replace(extn, '.science_image') # Images will be produced in $CWD
+
+    if os.path.exists(outlierfile) and open(outlierfile).read() == '':
+        outlierfile = ''
+
+    if not (type(threshold) is str and 'Jy' in threshold) and threshold > 1 and os.path.exists(rmsmap):
+        stats = imstat(imagename=rmsmap)
+        threshold *= stats['min'][0]
+
+    common = dict(cell=cell, robust=robust, imsize=imsize, wprojplanes=wprojplanes, niter=niter,
+                  threshold=threshold, multiscale=multiscale, nterms=nterms, gridder=gridder,
+                  deconvolver=deconvolver, restoringbeam=restoringbeam, stokes=stokes, mask=mask,
+                  outlierfile=outlierfile, pbthreshold=pbthreshold, pbband=pbband, usemask=usemask,
+                  sidelobethreshold=sidelobethreshold, noisethreshold=noisethreshold,
+                  lownoisethreshold=lownoisethreshold, negativethreshold=negativethreshold,
+                  alpha_nsigma=alpha_nsigma)
+
+    if spw_cube:
+        # Image each spectral window separately into SPWs_full_stokes/ (an SPW "cube" of
+        # per-SPW images) instead of producing a single full-bandwidth averaged image.
+        spw_ids, labels = _resolve_spws(vis, spwid)
+        outdir = 'SPWs_full_stokes'
+        os.makedirs(outdir, exist_ok=True)
+        logger.info("spw_cube=True: imaging {0} SPW(s) {1} separately into '{2}/'.".format(len(spw_ids), spw_ids, outdir))
+        for sid, label in zip(spw_ids, labels):
+            imagename = os.path.join(outdir, '{0}.{1}.{2}'.format(sid, label, imagebase))
+            logger.info("Imaging SPW {0} ({1}) -> {2}".format(sid, label, imagename))
+            _build_and_clean(vis, imagename, str(sid), **common)
+    else:
+        _build_and_clean(vis, imagebase, '', **common)
 
 if __name__ == '__main__':
 

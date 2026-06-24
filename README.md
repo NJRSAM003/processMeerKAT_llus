@@ -13,6 +13,7 @@ This is a personal fork of the [IDIA MeerKAT pipeline](https://github.com/idia-a
 * **`atrous_do` config option** (`[selfcal]`) — enables PyBDSF à-trous (wavelet) decomposition during self-cal source finding to better recover extended/diffuse emission. Defaults to `False` (existing behaviour). Applied in `selfcal_part2.py`.
 * **Science-imaging masking modes** (`[image]`) — choose `usemask = 'user'` (standard, uses `mask`) or `usemask = 'auto-multithresh'` (uses `sidelobethreshold`, `noisethreshold`, `lownoisethreshold`, `negativethreshold` instead).
 * **PyBDSF-driven spectral-index (alpha) imaging** — for multi-Stokes / non-`I` `mtmfs` runs, the science imaging step builds a noise-thresholded `alpha` map and `alpha.error` map (with a restoring beam inherited from Stokes I so PyBDSF can read it), controlled by `alpha_nsigma`.
+* **Per-SPW science imaging** (`[image]`) — set `spw_cube = True` to image each spectral window separately (into `SPWs_full_stokes/`) instead of producing a single full-bandwidth averaged image. Frequency labels are auto-derived from the MS metadata, and `spwid` optionally restricts which SPWs are imaged (`''` = all). Combine with `stokes = 'IQUV'` for full-Stokes per-SPW imaging.
 * **Automatic log cleanup** — once all pipeline jobs finish, a lightweight dependent SLURM job removes stray `casa*.log` files from the working directory.
 * **Python 3.12 fixes** — `SafeConfigParser` → `RawConfigParser`, invalid escape-sequence `SyntaxWarning`s resolved.
 
@@ -83,6 +84,8 @@ These keys are added/used by this fork. They all have sensible defaults, so exis
 | `[image]` | `lownoisethreshold` | `0.01` | Only used when `usemask = 'auto-multithresh'`. |
 | `[image]` | `negativethreshold` | `0.0` | Only used when `usemask = 'auto-multithresh'`. |
 | `[image]` | `alpha_nsigma` | `1.0` | Sigma cut for the final alpha mask (used when `stokes != 'I'` to produce a spectral-index image). |
+| `[image]` | `spw_cube` | `False` | Image each SPW separately into `SPWs_full_stokes/` instead of one full-bandwidth averaged image. |
+| `[image]` | `spwid` | `''` | Comma-separated SPW IDs to image when `spw_cube = True` (e.g. `'0,1,2'`); `''` = all SPWs. |
 
 ## Using multiple spectral windows (new in v1.1)
 

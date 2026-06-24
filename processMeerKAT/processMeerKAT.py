@@ -62,6 +62,7 @@ CROSSCAL_CONFIG_KEYS = ['minbaselines','chanbin','width','timeavg','createmms','
 CROSSCAL_OPTIONAL_KEYS = ['polcalfield']
 SELFCAL_CONFIG_KEYS = ['nloops','loop','cell','robust','imsize','wprojplanes','niter','threshold','uvrange','nterms','gridder','deconvolver','solint','calmode','discard_nloops','gaintype','outlier_threshold','flag','outlier_radius','atrous_do']
 IMAGING_CONFIG_KEYS = ['cell', 'robust', 'imsize', 'wprojplanes', 'niter', 'threshold', 'multiscale', 'nterms', 'gridder', 'deconvolver', 'restoringbeam', 'stokes', 'mask', 'rmsmap','outlierfile', 'pbthreshold', 'pbband', 'usemask', 'sidelobethreshold', 'noisethreshold', 'lownoisethreshold', 'negativethreshold', 'alpha_nsigma']
+IMAGING_OPTIONAL_KEYS = ['spw_cube','spwid']
 SLURM_CONFIG_STR_KEYS = ['container','mpi_wrapper','partition','time','name','dependencies','exclude','account','reservation']
 SLURM_CONFIG_KEYS = ['nodes','ntasks_per_node','mem','plane','submit','precal_scripts','postcal_scripts','scripts','verbose','modules'] + SLURM_CONFIG_STR_KEYS
 CONTAINER = '/idia/software/containers/casa-6.5.0-modular.sif'
@@ -1285,7 +1286,7 @@ def format_args(config,submit,quiet,dependencies,justrun):
                 os.system(command)
 
     if config_parser.has_section(config,'image'):
-        imaging_kwargs = get_config_kwargs(config, 'image', IMAGING_CONFIG_KEYS)
+        imaging_kwargs = get_config_kwargs(config, 'image', IMAGING_CONFIG_KEYS, IMAGING_OPTIONAL_KEYS)
 
         valid_pbbands = ['LBand', 'SBand', 'UHF']
         if not any([pb.lower() in imaging_kwargs['pbband'].lower() for pb in valid_pbbands]):
