@@ -14,7 +14,7 @@ This is a personal fork of the [IDIA MeerKAT pipeline](https://github.com/idia-a
 * **Science-imaging masking modes** (`[image]`) — choose `usemask = 'user'` (standard, uses `mask`) or `usemask = 'auto-multithresh'` (uses `sidelobethreshold`, `noisethreshold`, `lownoisethreshold`, `negativethreshold` instead).
 * **PyBDSF-driven spectral-index (alpha) imaging** — for multi-Stokes / non-`I` `mtmfs` runs, the science imaging step builds a noise-thresholded `alpha` map and `alpha.error` map (with a restoring beam inherited from Stokes I so PyBDSF can read it), controlled by `alpha_nsigma`.
 * **Per-SPW science imaging** (`[image]`) — set `spw_cube = True` to image each spectral window separately (into `SPW_MFSs/`) instead of producing a single full-bandwidth averaged image. Frequency labels are auto-derived from the MS metadata, and `spwid` optionally restricts which SPWs are imaged (`''` = all). Combine with `stokes = 'IQUV'` for full-Stokes per-SPW imaging.
-* **Automatic log cleanup** — once all pipeline jobs finish, a lightweight dependent SLURM job removes stray `casa*.log` files from the working directory.
+* **Automatic log cleanup** — once all pipeline jobs finish, a lightweight dependent SLURM job moves stray `casa*.log` files from the working directory into the `logs/` folder.
 * **Python 3.12 fixes** — `SafeConfigParser` → `RawConfigParser`, invalid escape-sequence `SyntaxWarning`s resolved.
 
 ## Requirements
@@ -60,7 +60,7 @@ This defines several variables that are read by the pipeline while calibrating t
 
         processMeerKAT.py -R -C myconfig.txt
 
-This will create `submit_pipeline.sh`, which you can then run with `./submit_pipeline.sh` to submit all pipeline jobs to the SLURM queue. After all jobs complete, stray `casa*.log` files are automatically removed from the working directory.
+This will create `submit_pipeline.sh`, which you can then run with `./submit_pipeline.sh` to submit all pipeline jobs to the SLURM queue. After all jobs complete, stray `casa*.log` files are automatically moved from the working directory into the `logs/` folder.
 
 Other convenience scripts are also created that allow you to monitor and (if necessary) kill the jobs.
 
