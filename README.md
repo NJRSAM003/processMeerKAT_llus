@@ -6,7 +6,7 @@
 
 This is a personal fork of the [IDIA MeerKAT pipeline](https://github.com/idia-astro/pipelines), a radio interferometric calibration pipeline designed to process MeerKAT data. It implements cross-calibration, self-calibration, and science imaging. This fork tracks the upstream `master` and adds a number of changes aimed at **full-polarization** processing, **Python 3.12** compatibility, and **science imaging** improvements.
 
-### What this fork changes relative to upstream `master`
+### What this fork changes
 
 * **Polarization calibration on linear feeds** — L-band polarization calibrator support in `setjy`, plus XY-phase ambiguity solving when the polarization calibrator and phase calibrator share a name.
 * **`polcalfield` config option** (`[crosscal]`) — explicit fallback XY-phase calibrator, only used when no canonical pol calibrator (3C286/3C138/3C48/J1130-1449) is found in the MS. Optional; defaults to `''` and is auto-annotated by `-B`.
