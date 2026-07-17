@@ -27,11 +27,12 @@ This pipeline is designed to run on the Ilifu cluster, making use of SLURM and M
 
 ## 1. Setup the pipeline in your environment
 
-In order to use the `processMeerKAT.py` script, source this fork's `setup.sh` on [ilifu](https://docs.ilifu.ac.za/#/):
+First clone this fork somewhere on [ilifu](https://docs.ilifu.ac.za/#/), then source its `setup.sh` to use the `processMeerKAT.py` script:
 
-        source /users/amani/processMeerKAT_fork/processMeerKAT/setup.sh
+        git clone https://github.com/NJRSAM003/processMeerKAT_llus.git
+        source /path/to/processMeerKAT_llus/processMeerKAT/setup.sh
 
-This adds the correct paths to your `$PATH` and `$PYTHONPATH` to use the pipeline. You could consider adding this to your `~/.profile` or `~/.bashrc` for future use.
+Replace `/path/to/processMeerKAT_llus` with wherever you cloned the fork. This adds the correct paths to your `$PATH` and `$PYTHONPATH` to use the pipeline. You could consider adding this to your `~/.profile` or `~/.bashrc` for future use.
 
 > If you switch between this fork and the upstream install (`source /idia/software/pipelines/master/setup.sh`), re-source the one you want and regenerate your sbatch scripts (`-R`) so they point at the correct `processMeerKAT` directory.
 
