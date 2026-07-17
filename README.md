@@ -133,14 +133,8 @@ These keys are added/used by this fork. They all have sensible defaults, so exis
   </tbody>
 </table>
 
-## Using multiple spectral windows (new in v1.1)
+## Documentation
 
-Starting with v1.1 of the processMeerKAT pipeline, the default behaviour is to split up the MeerKAT band into several spectral windows (SPWs), and process each concurrently. This results in a few major usability changes as outlined below:
+By default the pipeline splits the MeerKAT band into several spectral windows (SPWs) and processes each concurrently — this fork keeps that upstream behaviour unchanged. See [SPW splitting](https://idia-pipelines.github.io/docs/processMeerKAT/config-files#spw-splitting) for the details.
 
-1. **Calibration output** : Since the calibration is performed independently per SPW, all the output specific to that SPW is within its own directory. Output such as the calibration tables, logs, plots etc. per SPW can be found within each SPW directory.
-
-2. **Logs in the top level directory** : Logs in the top level directory (*i.e.,* the directory where the pipeline was launched) correspond to the scripts in the `precal_scripts` and `postcal_scripts` variables in the config file. These scripts are run from the top level before and after calibration respectively. By default these correspond to the scripts to calculate the reference antenna (if enabled), partition the data into SPWs, and concat the individual SPWs back into a single MS/MMS.
-
-More detailed information about SPW splitting is found [here](https://idia-pipelines.github.io/docs/processMeerKAT/config-files#spw-splitting).
-
-The documentation can be accessed on the [pipelines website](https://idia-pipelines.github.io/docs/processMeerKAT), or on the [Github wiki](https://github.com/idia-astro/pipelines/wiki).
+Full documentation is on the [pipelines website](https://idia-pipelines.github.io/docs/processMeerKAT) and the [Github wiki](https://github.com/idia-astro/pipelines/wiki).
