@@ -48,6 +48,45 @@ def _unmask_all(imagepath):
     ia.close()
 
 
+def _get_restoring_beam(imagepath):
+    """Return a single restoring-beam dict {major,minor,positionangle} from imagepath, or None.
+
+    The PSF image (.psf.tt0) carries the fitted beam even when residual-derived
+    products don't, so it's the most reliable source. Handles both the single-beam
+    form and the per-plane ('beams') form returned for multi-Stokes images."""
+    if not os.path.exists(imagepath):
+        return None
+    ia.open(imagepath)
+    try:
+        beam = ia.restoringbeam()
+    finally:
+        ia.close()
+    if not beam:
+        return None
+    if 'beams' in beam:
+        # Per-plane beams (e.g. a multi-Stokes cube): take the first available plane.
+        chan = sorted(beam['beams'].keys())[0]
+        pol = sorted(beam['beams'][chan].keys())[0]
+        beam = beam['beams'][chan][pol]
+    if 'major' not in beam:
+        return None
+    return beam
+
+
+def _set_restoring_beam(target, beam):
+    """Stamp a single restoring beam onto an existing CASA image so PyBDSF/FITS can read it."""
+    if beam is None or not os.path.exists(target):
+        return
+    major = '{0}{1}'.format(beam['major']['value'], beam['major']['unit'])
+    minor = '{0}{1}'.format(beam['minor']['value'], beam['minor']['unit'])
+    pa    = '{0}{1}'.format(beam['positionangle']['value'], beam['positionangle']['unit'])
+    ia.open(target)
+    try:
+        ia.setrestoringbeam(major=major, minor=minor, pa=pa)
+    finally:
+        ia.close()
+
+
 def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     """
     Build a noise-thresholded spectral-index (alpha) image from an mtmfs run.
@@ -79,11 +118,19 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     img1   = imagename + '.image.tt1'
     resid0 = imagename + '.residual.tt0'
     resid1 = imagename + '.residual.tt1'
+    psf0   = imagename + '.psf.tt0'
 
     for f in [img0, img1, resid0, resid1]:
         if not os.path.exists(f):
             logger.warning("Skipping alpha image: '{0}' not found.".format(f))
             return
+
+    # Restoring beam for all alpha products: the residual-derived error map carries no
+    # beam, so read it from .psf.tt0 (falling back to the restored Stokes-I image) and
+    # stamp it explicitly onto every product below so PyBDSF/FITS can always read BMAJ/BMIN/BPA.
+    beam = _get_restoring_beam(psf0) or _get_restoring_beam(img0)
+    if beam is None:
+        logger.warning("No restoring beam found in '{0}' or '{1}'; alpha products may lack beam info.".format(psf0, img0))
 
     # Extract the Stokes I plane from each Taylor-term image — alpha is a Stokes-I concept.
     work = {}
@@ -102,13 +149,15 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     logger.info("Building alpha map -> {0}".format(os.path.basename(alpha_out)))
     immath(imagename=[work['img1'], work['img0']], expr='IM0/IM1', outfile=alpha_out)
     _unmask_all(alpha_out)
+    _set_restoring_beam(alpha_out, beam)
 
     logger.info("Building alpha error map -> {0}".format(os.path.basename(alpha_err_out)))
     immath(imagename=[work['resid1'], work['img1'], work['img0'], work['resid0']],
            expr='sqrt((IM0/IM2)^2 + (((IM1/IM2)*IM3/IM2)^2))',
            outfile=alpha_err_out,
-           imagemd=work['img0'])  # Inherit beam/coordsys from restored Stokes I (residuals carry no restoring beam) so PyBDSF can read BMAJ/BMIN/BPA
+           imagemd=work['img0'])  # Inherit coordsys from restored Stokes I (residuals carry no restoring beam)
     _unmask_all(alpha_err_out)
+    _set_restoring_beam(alpha_err_out, beam)  # Explicit beam from .psf.tt0 so PyBDSF can read BMAJ/BMIN/BPA
 
     # PyBDSF wants a FITS file for header stability (matches master's selfcal pattern).
     fitsname = alpha_err_out + '.fits'
@@ -127,12 +176,14 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
            expr='iif(IM0 < 5*IM1, IM0, 0/0)',
            outfile=alpha_clip_out,
            imagemd=work['img0'])
+    _set_restoring_beam(alpha_clip_out, beam)
 
     logger.info("Masking alpha where |alpha| > {0} x clipped error -> {1}".format(alpha_nsigma, os.path.basename(alpha_sig_out)))
     immath(imagename=[alpha_out, alpha_clip_out],
            expr='iif(abs(IM0) > {0}*IM1, IM0, 0/0)'.format(alpha_nsigma),
            outfile=alpha_sig_out,
            imagemd=work['img0'])
+    _set_restoring_beam(alpha_sig_out, beam)
 
 
 def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):
