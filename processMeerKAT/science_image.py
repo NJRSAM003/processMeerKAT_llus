@@ -304,11 +304,12 @@ def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):
 
 
 def _resolve_spws(vis, spwid):
-    """Return (spw_ids, freq_labels) for the SPWs to image.
+    """Return (spw_ids, freq_labels, central_freqs) for the SPWs to image.
 
     spw_ids are the integer SPW IDs in the MS; freq_labels are 'LO-HIMHz' strings
     derived from each SPW's channel frequency range (so there's no parallel
-    freq-band list to maintain). If spwid is '', every SPW in the MS is used.
+    freq-band list to maintain); central_freqs are the mean channel frequency (Hz)
+    of each SPW, used to label the cube slices. If spwid is '', every SPW is used.
     """
     msmd = msmetadata()
     msmd.open(vis)
@@ -318,15 +319,17 @@ def _resolve_spws(vis, spwid):
         else:
             ids = list(range(msmd.nspw()))
         labels = []
+        central_freqs = []
         for sid in ids:
             freqs = msmd.chanfreqs(sid)  # Hz
             labels.append('{0:.0f}-{1:.0f}MHz'.format(freqs.min() / 1e6, freqs.max() / 1e6))
+            central_freqs.append(float(freqs.mean()))  # SPW central (mean channel) frequency, Hz
     finally:
         msmd.done()
-    return ids, labels
+    return ids, labels, central_freqs
 
 
-def _concat_spw_cube(imagenames, outname, deconvolver, common_beam=False):
+def _concat_spw_cube(imagenames, central_freqs, outname, deconvolver, common_beam=False):
     """Merge the per-SPW full-Stokes MFS images into one 4D (RA, Dec, Stokes, freq) cube.
 
     Each per-SPW image is a single-frequency, full-Stokes plane at its own SPW frequency and
@@ -336,16 +339,35 @@ def _concat_spw_cube(imagenames, outname, deconvolver, common_beam=False):
     CARTA shows the correct (frequency-dependent) beam on every channel. reorder=True sorts the
     planes by frequency; relax=True tolerates the non-uniform SPW spacing left after flagging.
 
+    central_freqs (Hz, parallel to imagenames) are the true SPW mean frequencies. Because the
+    SPW spacing is non-uniform, the exact per-slice frequency is written to a companion
+    <base>.cube.freqfile.dat (one value per slice, ascending, matching the cube's channel order)
+    so the user always knows which frequency each slice corresponds to, independent of the
+    cube's (possibly linearised) spectral WCS.
+
     If common_beam is True, the cube is additionally convolved to a single common beam (the
     smallest beam enclosing every per-plane beam) and written to <base>.cube.commonbeam.image,
     so all slices share one resolution instead of the per-plane beam table.
 
     Returns the path of the primary cube written, or None if there aren't >=2 SPW images."""
     suffix = '.image.tt0' if deconvolver == 'mtmfs' else '.image'
-    infiles = [n + suffix for n in imagenames if os.path.exists(n + suffix)]
-    if len(infiles) < 2:
-        logger.warning("spw_cube: found {0} SPW image(s); need >=2 to build a cube. Skipping concat.".format(len(infiles)))
+    # Pair each existing image with its central frequency, then sort ascending so the file
+    # order matches imageconcat's reorder=True (which sorts slices by frequency).
+    pairs = sorted((f, n + suffix) for n, f in zip(imagenames, central_freqs)
+                   if os.path.exists(n + suffix))
+    if len(pairs) < 2:
+        logger.warning("spw_cube: found {0} SPW image(s); need >=2 to build a cube. Skipping concat.".format(len(pairs)))
         return None
+    sorted_freqs = [f for f, _ in pairs]
+    infiles = [n for _, n in pairs]
+
+    # Companion frequency list: one central frequency (Hz) per slice, ascending.
+    freqfile = outname.replace('.cube.image', '.cube.freqfile.dat')
+    with open(freqfile, 'w') as fh:
+        for f in sorted_freqs:
+            fh.write('{0:.10e}\n'.format(f))
+    logger.info("Wrote per-slice central frequencies -> {0}".format(freqfile))
+
     if os.path.exists(outname):
         shutil.rmtree(outname)
     logger.info("Concatenating {0} per-SPW images into frequency cube -> {1}".format(len(infiles), outname))
@@ -463,7 +485,7 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
     if spw_cube:
         # Image each spectral window separately into SPW_MFSs/, then merge the per-SPW
         # full-Stokes MFS images into a single 4D (RA, Dec, Stokes, freq) cube.
-        spw_ids, labels = _resolve_spws(vis, spwid)
+        spw_ids, labels, central_freqs = _resolve_spws(vis, spwid)
         outdir = 'SPW_MFSs'
         os.makedirs(outdir, exist_ok=True)
         logger.info("spw_cube=True: imaging {0} SPW(s) {1} separately into '{2}/'.".format(len(spw_ids), spw_ids, outdir))
@@ -473,10 +495,11 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
             logger.info("Imaging SPW {0} ({1}) -> {2}".format(sid, label, imagename))
             _build_and_clean(vis, imagename, str(sid), **common)
             imagenames.append(imagename)
-        # Stack the per-SPW images into one frequency cube (per-plane beam table), optionally
-        # also smoothed to a single common beam when common_beam=True.
+        # Stack the per-SPW images into one frequency cube (per-plane beam table) plus a
+        # companion freqfile.dat of per-slice central frequencies; optionally also smoothed
+        # to a single common beam when common_beam=True.
         cubename = os.path.join(outdir, imagebase + '.cube.image')
-        _concat_spw_cube(imagenames, cubename, deconvolver, common_beam=common_beam)
+        _concat_spw_cube(imagenames, central_freqs, cubename, deconvolver, common_beam=common_beam)
     else:
         _build_and_clean(vis, imagebase, '', **common)
 
