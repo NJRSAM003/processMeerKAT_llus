@@ -323,19 +323,34 @@ def validate_args(args,config,parser=None):
         # 2. Handle missing or 'None' input, This ensures that if the user forgets -A, it defaults to their default group
         user_provided_account = args.get('account')
         if not user_provided_account or str(user_provided_account).lower() == 'none':
-            # Fetch all accounts to provide context to the user
-            list_cmd = f"sacctmgr show user {user_name} --noheader -s format=account%30"
-            available = os.popen(list_cmd).read().split()
-            
-            if default_acc:
-                msg = f"No account specified. Authorized groups: {', '.join(available)}."
-                print(f"INFO: {msg}", file=sys.stderr)
-                args['account'] = default_acc
+            # Before falling back to the system default account, honour an account already
+            # written in the config. This is the case for the recursive per-SPW -R calls
+            # (write_spw_master runs '... --run --quiet' in each SPW dir without re-passing
+            # -A), where the config already carries the account chosen at build time. Using
+            # it silently suppresses the spurious "No account specified / Using <default>"
+            # message that otherwise printed the wrong account for every SPW directory.
+            config_account = ''
+            try:
+                config_account = config_parser.get_key(config, 'slurm', 'account')
+            except Exception:
+                config_account = ''
+
+            if config_account and str(config_account).lower() != 'none':
+                args['account'] = config_account
             else:
-                msg = "No Slurm account provided and no default detected for your user."
-                if available:
-                    msg += f" Please specify one of your authorized groups: {', '.join(available)}."
-                raise_error(config, msg, parser)
+                # Fetch all accounts to provide context to the user
+                list_cmd = f"sacctmgr show user {user_name} --noheader -s format=account%30"
+                available = os.popen(list_cmd).read().split()
+
+                if default_acc:
+                    msg = f"No account specified. Authorized groups: {', '.join(available)}."
+                    print(f"INFO: {msg}", file=sys.stderr)
+                    args['account'] = default_acc
+                else:
+                    msg = "No Slurm account provided and no default detected for your user."
+                    if available:
+                        msg += f" Please specify one of your authorized groups: {', '.join(available)}."
+                    raise_error(config, msg, parser)
 
         # 3. Direct Validation
         # Instead of fetching a list, we ask Slurm: "Is this specific account valid for this user?"
