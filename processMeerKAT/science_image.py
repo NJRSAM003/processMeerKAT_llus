@@ -303,19 +303,32 @@ def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):
     ia.close()
 
 
+def _parse_spwid(spwid):
+    """Normalise spwid to a list of int SPW IDs, accepting either form:
+    a list ([0,1,2]) or a comma-separated string ('0,1,2'). Empty ('' / [] / None) -> []."""
+    if spwid is None:
+        return []
+    if isinstance(spwid, (list, tuple)):
+        return [int(s) for s in spwid]
+    s = str(spwid).strip().strip('[]')
+    return [int(x) for x in s.split(',') if x.strip() != '']
+
+
 def _resolve_spws(vis, spwid):
     """Return (spw_ids, freq_labels, central_freqs) for the SPWs to image.
 
     spw_ids are the integer SPW IDs in the MS; freq_labels are 'LO-HIMHz' strings
     derived from each SPW's channel frequency range (so there's no parallel
     freq-band list to maintain); central_freqs are the mean channel frequency (Hz)
-    of each SPW, used to label the cube slices. If spwid is '', every SPW is used.
+    of each SPW, used to label the cube slices. spwid may be a list ([0,1,2]) or a
+    comma-separated string ('0,1,2'); if empty, every SPW is used.
     """
     msmd = msmetadata()
     msmd.open(vis)
     try:
-        if spwid.strip() != '':
-            ids = [int(s) for s in spwid.split(',') if s.strip() != '']
+        requested = _parse_spwid(spwid)
+        if requested:
+            ids = requested
         else:
             ids = list(range(msmd.nspw()))
         labels = []

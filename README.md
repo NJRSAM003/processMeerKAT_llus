@@ -133,7 +133,7 @@ These keys are added/used by this fork. They all have sensible defaults, so exis
     <tr>
       <td><code>spwid</code></td>
       <td><code>''</code></td>
-      <td>Comma-separated SPW IDs to image when <code>spw_cube = True</code> (e.g. <code>'0,1,2'</code>); <code>''</code> = all SPWs.</td>
+      <td>SPW IDs to image when <code>spw_cube = True</code>, as a list <code>[0,1,2]</code> or string <code>'0,1,2'</code>; <code>''</code> (or <code>[]</code>) = all SPWs.</td>
     </tr>
   </tbody>
 </table>

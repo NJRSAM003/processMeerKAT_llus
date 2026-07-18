@@ -570,11 +570,16 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
         except Exception:
             spw_cube_array = False
         if spw_cube_array:
+            #spwid may be a list ([0,1,2]) or comma-separated string ('0,1,2'); count either way.
             try:
-                cube_spwid = str(config_parser.get_key(TMP_CONFIG, 'image', 'spwid'))
+                cube_spwid = config_parser.get_key(TMP_CONFIG, 'image', 'spwid')
             except Exception:
                 cube_spwid = ''
-            ncube = len([s for s in cube_spwid.split(',') if s.strip() != '']) if cube_spwid.strip() != '' else nspw
+            if isinstance(cube_spwid, (list, tuple)):
+                n_ids = len(cube_spwid)
+            else:
+                n_ids = len([s for s in str(cube_spwid).strip().strip('[]').split(',') if s.strip() != ''])
+            ncube = n_ids if n_ids > 0 else nspw
             ncube = max(int(ncube), 1)
 
     if 'partition' in script and ',' in SPWs and nspw > 1:
