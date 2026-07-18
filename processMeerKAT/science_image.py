@@ -483,21 +483,35 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
                   alpha_nsigma=alpha_nsigma)
 
     if spw_cube:
-        # Image each spectral window separately into SPW_MFSs/, then merge the per-SPW
-        # full-Stokes MFS images into a single 4D (RA, Dec, Stokes, freq) cube.
         spw_ids, labels, central_freqs = _resolve_spws(vis, spwid)
         outdir = 'SPW_MFSs'
         os.makedirs(outdir, exist_ok=True)
-        logger.info("spw_cube=True: imaging {0} SPW(s) {1} separately into '{2}/'.".format(len(spw_ids), spw_ids, outdir))
+
+        # When launched as one task of the science_image SLURM job array (built by
+        # processMeerKAT.py when spw_cube=True), each task images exactly ONE SPW so all SPWs
+        # image concurrently on separate nodes. The cube is then assembled by the separate
+        # spw_cube_concat.py job that depends on the whole array. SLURM_ARRAY_TASK_ID selects
+        # the SPW. If not running in an array (e.g. a manual/serial run), fall back to imaging
+        # every SPW in a loop and concatenating here.
+        task = os.environ.get('SLURM_ARRAY_TASK_ID')
+        if task is not None:
+            i = int(task)
+            if i >= len(spw_ids):
+                logger.warning("Array task {0} >= number of SPWs ({1}); nothing to image.".format(i, len(spw_ids)))
+                return
+            sid, label = spw_ids[i], labels[i]
+            imagename = os.path.join(outdir, '{0}.{1}.{2}'.format(sid, label, imagebase))
+            logger.info("Array task {0}: imaging SPW {1} ({2}) -> {3}".format(i, sid, label, imagename))
+            _build_and_clean(vis, imagename, str(sid), **common)
+            return  # cube assembly is handled by the dependent spw_cube_concat.py job
+
+        logger.info("spw_cube=True (serial): imaging {0} SPW(s) {1} into '{2}/'.".format(len(spw_ids), spw_ids, outdir))
         imagenames = []
         for sid, label in zip(spw_ids, labels):
             imagename = os.path.join(outdir, '{0}.{1}.{2}'.format(sid, label, imagebase))
             logger.info("Imaging SPW {0} ({1}) -> {2}".format(sid, label, imagename))
             _build_and_clean(vis, imagename, str(sid), **common)
             imagenames.append(imagename)
-        # Stack the per-SPW images into one frequency cube (per-plane beam table) plus a
-        # companion freqfile.dat of per-slice central frequencies; optionally also smoothed
-        # to a single common beam when common_beam=True.
         cubename = os.path.join(outdir, imagebase + '.cube.image')
         _concat_spw_cube(imagenames, central_freqs, cubename, deconvolver, common_beam=common_beam)
     else:

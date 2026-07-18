@@ -539,9 +539,36 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
         nconcurrent = nspw
 
     params['command'] = write_command(script,args,name=name,mpi_wrapper=mpi_wrapper,container=container,casa_script=casa_script,plot=plot,SPWs=SPWs,nspw=nspw)
+
+    #For spw_cube science imaging, run science_image as a job array (one task per SPW of the
+    #target MMS) so all SPWs image concurrently. Array size = len(spwid) if set, else nspw. The
+    #dependent spw_cube_concat job (appended in format_args) then merges the per-SPW images.
+    spw_cube_array = False
+    ncube = 0
+    if 'science_image' in script:
+        try:
+            spw_cube_array = bool(config_parser.get_key(TMP_CONFIG, 'image', 'spw_cube'))
+        except Exception:
+            spw_cube_array = False
+        if spw_cube_array:
+            try:
+                cube_spwid = str(config_parser.get_key(TMP_CONFIG, 'image', 'spwid'))
+            except Exception:
+                cube_spwid = ''
+            ncube = len([s for s in cube_spwid.split(',') if s.strip() != '']) if cube_spwid.strip() != '' else nspw
+            ncube = max(int(ncube), 1)
+
     if 'partition' in script and ',' in SPWs and nspw > 1:
         params['ID'] = '%A_%a'
         params['array'] = '\n#SBATCH --array=0-{0}%{1}'.format(nspw-1,nconcurrent)
+    elif spw_cube_array and ncube > 1:
+        nconcurrent_cube = int(200 / (params['nodes'] * params['tasks'] * params['cpus']))
+        if nconcurrent_cube < 1:
+            nconcurrent_cube = 1
+        if nconcurrent_cube > ncube:
+            nconcurrent_cube = ncube
+        params['ID'] = '%A_%a'
+        params['array'] = '\n#SBATCH --array=0-{0}%{1}'.format(ncube-1,nconcurrent_cube)
     else:
         params['ID'] = '%j'
         params['array'] = ''
@@ -1288,8 +1315,10 @@ def format_args(config,submit,quiet,dependencies,justrun):
                 logger.debug('Running following command:\n\t{0}'.format(command))
                 os.system(command)
 
+    spw_cube_enabled = False
     if config_parser.has_section(config,'image'):
         imaging_kwargs = get_config_kwargs(config, 'image', IMAGING_CONFIG_KEYS, IMAGING_OPTIONAL_KEYS)
+        spw_cube_enabled = bool(imaging_kwargs.get('spw_cube', False))
 
         valid_pbbands = ['LBand', 'SBand', 'UHF']
         if not any([pb.lower() in imaging_kwargs['pbband'].lower() for pb in valid_pbbands]):
@@ -1315,6 +1344,16 @@ def format_args(config,submit,quiet,dependencies,justrun):
         scripts = kwargs['precal_scripts'] + kwargs['postcal_scripts']
 
     kwargs['num_precal_scripts'] = len(kwargs['precal_scripts'])
+
+    #For spw_cube, science_image is generated as a job array (one task per SPW). Insert a
+    #dependent spw_cube_concat.py step right after it so the per-SPW images are merged into one
+    #cube once the whole array finishes. Inherits science_image's container; threadsafe=False
+    #(the concat is a light single-process imageconcat/imsmooth job, not MPI tclean).
+    if spw_cube_enabled:
+        names = [s[0] for s in scripts]
+        if 'science_image.py' in names and 'spw_cube_concat.py' not in names:
+            idx = names.index('science_image.py')
+            scripts.insert(idx + 1, ('spw_cube_concat.py', False, scripts[idx][2]))
 
     # Validate kwargs along with MS
     kwargs['MS'] = data_kwargs['vis']
