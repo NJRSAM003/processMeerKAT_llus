@@ -13,7 +13,7 @@ This is a personal fork of the [IDIA MeerKAT pipeline](https://github.com/idia-a
 * **`atrous_do` config option** (`[selfcal]`) — enables PyBDSF à-trous (wavelet) decomposition during self-cal source finding to better recover extended/diffuse emission. Defaults to `False` (existing behaviour). Applied in `selfcal_part2.py`.
 * **Science-imaging masking modes** (`[image]`) — choose `usemask = 'user'` (standard, uses `mask`) or `usemask = 'auto-multithresh'` (uses `sidelobethreshold`, `noisethreshold`, `lownoisethreshold`, `negativethreshold` instead).
 * **PyBDSF-driven spectral-index (alpha) imaging** — for multi-Stokes / non-`I` `mtmfs` runs, the science imaging step builds a noise-thresholded `alpha` map and `alpha.error` map (with a restoring beam inherited from Stokes I so PyBDSF can read it), controlled by `alpha_nsigma`.
-* **Per-SPW science imaging** (`[image]`) — set `spw_cube = True` to image each spectral window separately (into `SPW_MFSs/`) instead of producing a single full-bandwidth averaged image. Frequency labels are auto-derived from the MS metadata, and `spwid` optionally restricts which SPWs are imaged (`''` = all). Combine with `stokes = 'IQUV'` for full-Stokes per-SPW imaging.
+* **Radio-continuum cube imaging** (`[image]`) — set `spw_cube = True` to image each spectral window separately (into `SPW_MFSs/`) and then merge them into a single 4D (RA, Dec, Stokes, frequency) cube instead of one full-bandwidth averaged image. Each SPW keeps its own restoring beam, so the cube is written with a per-plane CASA beam table (the correct, frequency-dependent beam on every channel). Frequency labels are auto-derived from the MS metadata, `spwid` optionally restricts which SPWs are imaged (`''` = all), and combining with `stokes = 'IQUV'` gives a full-Stokes continuum cube.
 * **Automatic log cleanup** — once all pipeline jobs finish, a lightweight dependent SLURM job moves stray `casa*.log` files from the working directory into the `logs/` folder.
 * **Python 3.12 fixes** — `SafeConfigParser` → `RawConfigParser`, invalid escape-sequence `SyntaxWarning`s resolved.
 
@@ -123,7 +123,7 @@ These keys are added/used by this fork. They all have sensible defaults, so exis
     <tr>
       <td><code>spw_cube</code></td>
       <td><code>False</code></td>
-      <td>Image each SPW separately into <code>SPW_MFSs/</code> instead of one full-bandwidth averaged image.</td>
+      <td>Image each SPW separately into <code>SPW_MFSs/</code> and merge them into a single 4D (RA, Dec, Stokes, freq) cube with a per-plane beam table, instead of one full-bandwidth averaged image.</td>
     </tr>
     <tr>
       <td><code>spwid</code></td>
