@@ -165,10 +165,16 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
         exportfits(imagename=alpha_err_out, fitsimage=fitsname)
 
     logger.info("Running PyBDSF for 2D RMS map of alpha error -> {0}".format(os.path.basename(alpha_err_rms)))
+    # We only need the 2D background RMS map, not a source list. stop_at='isl' computes the
+    # rms/mean maps and finds islands, then stops BEFORE Gaussian fitting. This matters here:
+    # the alpha-error map is sqrt((resid/tt0)^2 + ...) and off-source tt0 ~ 0, so the division
+    # blows up across the whole field and PyBDSF detects ~10^5 spurious islands. Without
+    # stop_at='isl' it then tries to Gaussian-fit all of them and hangs for many hours; the
+    # exported rms map is unaffected because it's produced before the fitting stage.
     img = bdsf.process_image(fitsname, adaptive_rms_box=True,
         rms_box_bright=(40, 5), advanced_opts=True, mean_map='map',
         rms_box=(100, 30), rms_map=True, thresh='hard', thresh_isl=3.0, thresh_pix=5.0,
-        blank_limit=1e-10)
+        blank_limit=1e-10, stop_at='isl')
     img.export_image(outfile=alpha_err_rms, img_type='rms', img_format='casa', clobber=True)
 
     logger.info("Clipping alpha error pixel-wise at 5 x RMS -> {0}".format(os.path.basename(alpha_clip_out)))
