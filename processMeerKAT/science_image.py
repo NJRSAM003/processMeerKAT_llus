@@ -326,7 +326,7 @@ def _resolve_spws(vis, spwid):
     return ids, labels
 
 
-def _concat_spw_cube(imagenames, outname, deconvolver):
+def _concat_spw_cube(imagenames, outname, deconvolver, common_beam=False):
     """Merge the per-SPW full-Stokes MFS images into one 4D (RA, Dec, Stokes, freq) cube.
 
     Each per-SPW image is a single-frequency, full-Stokes plane at its own SPW frequency and
@@ -336,7 +336,11 @@ def _concat_spw_cube(imagenames, outname, deconvolver):
     CARTA shows the correct (frequency-dependent) beam on every channel. reorder=True sorts the
     planes by frequency; relax=True tolerates the non-uniform SPW spacing left after flagging.
 
-    Returns the cube path, or None if there aren't at least two SPW images to stack."""
+    If common_beam is True, the cube is additionally convolved to a single common beam (the
+    smallest beam enclosing every per-plane beam) and written to <base>.cube.commonbeam.image,
+    so all slices share one resolution instead of the per-plane beam table.
+
+    Returns the path of the primary cube written, or None if there aren't >=2 SPW images."""
     suffix = '.image.tt0' if deconvolver == 'mtmfs' else '.image'
     infiles = [n + suffix for n in imagenames if os.path.exists(n + suffix)]
     if len(infiles) < 2:
@@ -347,6 +351,25 @@ def _concat_spw_cube(imagenames, outname, deconvolver):
     logger.info("Concatenating {0} per-SPW images into frequency cube -> {1}".format(len(infiles), outname))
     cube = ia.imageconcat(outfile=outname, infiles=infiles, axis=-1, relax=True,
                           reorder=True, overwrite=True, mode='paged')
+
+    if common_beam:
+        # Smooth every channel to one common resolution: commonbeam() returns the smallest
+        # beam that encloses all per-plane beams, and imsmooth(targetres=True) convolves each
+        # plane up to exactly that beam. The per-plane-beam cube ('outname') is kept as well.
+        cbeam = cube.commonbeam()
+        cube.done()
+        major = '{0}{1}'.format(cbeam['major']['value'], cbeam['major']['unit'])
+        minor = '{0}{1}'.format(cbeam['minor']['value'], cbeam['minor']['unit'])
+        pa    = '{0}{1}'.format(cbeam['pa']['value'], cbeam['pa']['unit'])
+        smoothed = outname.replace('.cube.image', '.cube.commonbeam.image')
+        if os.path.exists(smoothed):
+            shutil.rmtree(smoothed)
+        logger.info("common_beam=True: smoothing cube to common beam {0} x {1} @ {2} -> {3}".format(
+            major, minor, pa, smoothed))
+        imsmooth(imagename=outname, kernel='gauss', major=major, minor=minor, pa=pa,
+                 targetres=True, outfile=smoothed)
+        return smoothed
+
     cube.done()
     return outname
 
@@ -416,7 +439,7 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
 
 def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms, gridder, deconvolver, restoringbeam, stokes, mask, rmsmap, outlierfile, keepmms, pbthreshold, pbband,
                   usemask='user', sidelobethreshold=0.5, noisethreshold=5.0, lownoisethreshold=0.01, negativethreshold=0.0,
-                  alpha_nsigma=1.0, spw_cube=False, spwid=''):
+                  alpha_nsigma=1.0, spw_cube=False, common_beam=False, spwid=''):
 
     visbase = os.path.split(vis.rstrip('/ '))[1] # Get only vis name, not entire path
     extn = '.ms' if keepmms==False else '.mms'
@@ -450,9 +473,10 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
             logger.info("Imaging SPW {0} ({1}) -> {2}".format(sid, label, imagename))
             _build_and_clean(vis, imagename, str(sid), **common)
             imagenames.append(imagename)
-        # Stack the per-SPW images into one frequency cube (with a per-plane beam table).
+        # Stack the per-SPW images into one frequency cube (per-plane beam table), optionally
+        # also smoothed to a single common beam when common_beam=True.
         cubename = os.path.join(outdir, imagebase + '.cube.image')
-        _concat_spw_cube(imagenames, cubename, deconvolver)
+        _concat_spw_cube(imagenames, cubename, deconvolver, common_beam=common_beam)
     else:
         _build_and_clean(vis, imagebase, '', **common)
 
