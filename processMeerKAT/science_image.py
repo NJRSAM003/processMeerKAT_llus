@@ -87,6 +87,33 @@ def _set_restoring_beam(target, beam):
         ia.close()
 
 
+def _stamp_beam_from_psf(imagename, deconvolver):
+    """Copy the fitted restoring beam from the PSF onto the restored brightness products.
+
+    In parallel / multi-Stokes mtmfs runs CASA fits the beam into .psf.tt0 but often leaves
+    the restored .image.tt* (and .residual.tt*) WITHOUT a global restoring beam, so CARTA,
+    PyBDSF and FITS export have no beam to read/draw. We take the beam from .psf.tt0 (the
+    trusted fitted beam) and stamp the same single global beam onto every Jy/beam product so
+    they're all identical. Products that aren't brightness maps (.model, .pb, .sumwt) are left
+    untouched — a restoring beam is meaningless there (model is Jy/pixel, pb/sumwt are
+    dimensionless), and CARTA doesn't need one to display them."""
+    psf = imagename + ('.psf.tt0' if deconvolver == 'mtmfs' else '.psf')
+    beam = _get_restoring_beam(psf)
+    if beam is None:
+        logger.warning("No restoring beam in '{0}'; cannot stamp restored products.".format(psf))
+        return
+    if deconvolver == 'mtmfs':
+        targets = [imagename + '.image.tt0', imagename + '.image.tt1',
+                   imagename + '.residual.tt0', imagename + '.residual.tt1']
+    else:
+        targets = [imagename + '.image', imagename + '.residual']
+    for t in targets:
+        if os.path.exists(t) and _get_restoring_beam(t) is None:
+            _set_restoring_beam(t, beam)
+            logger.info("Stamped restoring beam from {0} onto {1}".format(
+                os.path.basename(psf), os.path.basename(t)))
+
+
 def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     """
     Build a noise-thresholded spectral-index (alpha) image from an mtmfs run.
@@ -340,6 +367,12 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
 
     else:
         logger.warning('Output image "{0}" already exists. Skipping tclean step and applying pb correction.'.format(imname))
+
+    # Parallel/multi-Stokes mtmfs often leaves the restored .image.tt* without a global beam,
+    # even though .psf.tt0 carries it — so CARTA/PyBDSF/FITS see no beam. Stamp the psf beam
+    # onto the restored brightness products here, BEFORE the StokesI subimage + PB correction
+    # below, so those derivatives inherit the same beam.
+    _stamp_beam_from_psf(imagename, deconvolver)
 
     # Produce a spectral-index image only when polarisation imaging is involved
     # (stokes != 'I'); CASA already auto-writes alpha+error for plain Stokes-I mtmfs runs.
