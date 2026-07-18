@@ -504,6 +504,10 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
     #Store parameters passed into this function as dictionary, and add to it
     params = locals()
     params['LOG_DIR'] = LOG_DIR
+    #Source the setup.sh of the SAME clone that generated this sbatch (matches the dynamic
+    #SCRIPT_DIR python path below), instead of a hardcoded ~/processMeerKAT_fork/setup.sh.
+    #Portable across users/clones and immune to the stale-clone footgun.
+    params['setup'] = os.path.abspath(os.path.join(SCRIPT_DIR, 'setup.sh'))
 
     #Use multiple CPUs for tclean and paratition scripts
     params['cpus'] = 1
@@ -620,7 +624,7 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
 
     export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
     {modules}
-    source ~/processMeerKAT_fork/setup.sh
+    source {setup}
 
     {command}"""
 
