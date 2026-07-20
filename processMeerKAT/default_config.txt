@@ -102,7 +102,7 @@ sidelobethreshold = 0.5           # only used when usemask = 'auto-multithresh'
 noisethreshold = 5.0              # only used when usemask = 'auto-multithresh'
 lownoisethreshold = 0.01          # only used when usemask = 'auto-multithresh'
 negativethreshold = 0.0           # only used when usemask = 'auto-multithresh'
-alpha_nsigma = 1.0                # sigma cut for the final alpha mask (only used when stokes != 'I' to produce a spectral-index image)
+alpha_nsigma = 1.0                # DEPRECATED/UNUSED (kept for back-compat): the alpha step now writes only the raw alpha + alpha.error maps; do any sigma clipping yourself
 spw_cube = False                  # Image each SPW separately (into SPW_MFSs/) and merge into a single 4D (RA,Dec,Stokes,freq) cube with a per-plane beam table; use stokes='IQUV' for a full-Stokes continuum cube
 common_beam = False               # spw_cube only: if True, also convolve every cube slice to one common (largest) beam -> *.cube.commonbeam.image. False keeps the per-plane CASA beam table (individual beam per frequency)
 spwid = ''                        # SPW IDs to image when spw_cube=True, as a list [0,1,2] or string '0,1,2'; '' (or []) = all SPWs in the MS. Frequency labels are auto-derived from the MS

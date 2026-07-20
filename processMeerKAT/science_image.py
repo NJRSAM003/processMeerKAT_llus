@@ -23,11 +23,6 @@ from katbeam import JimBeam
 from casatools import image, msmetadata
 ia = image()
 
-try:
-    import bdsf
-except ImportError:
-    bdsf = None
-
 
 def _versioned(path):
     """Return path unchanged if it doesn't exist, else path_2, path_3, ..."""
@@ -116,7 +111,7 @@ def _stamp_beam_from_psf(imagename, deconvolver):
 
 def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     """
-    Build a noise-thresholded spectral-index (alpha) image from an mtmfs run.
+    Build a spectral-index (alpha) image and its error map from an mtmfs run.
 
     Skipped if deconvolver != 'mtmfs' (no Taylor terms) or if stokes is 'I' alone
     (CASA's tclean already auto-writes .alpha + .alpha.error in that case).
@@ -124,21 +119,19 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     For multi-Stokes runs (e.g. 'IQUV') we extract the Stokes I plane from each
     Taylor-term image first, since alpha is fundamentally a Stokes-I quantity.
 
-    Pipeline:
-      1. alpha = tt1 / tt0
+    Produces just the two raw maps:
+      1. alpha       = tt1 / tt0
       2. alpha_error = sqrt((resid_tt1/tt0)^2 + (alpha * resid_tt0/tt0)^2)
-      3. PyBDSF on alpha_error to produce a 2D RMS map (rms_map=True)
-      4. Clip alpha_error pixel-wise where alpha_error >= 5 * RMS_map
-      5. Final alpha mask: keep alpha where |alpha| > alpha_nsigma * clipped alpha_error
+
+    Any noise thresholding / sigma clipping is intentionally left to the user to do
+    separately on these maps. (alpha_nsigma is accepted for backward compatibility but
+    is no longer used.)
     """
     if deconvolver != 'mtmfs':
         logger.info("Skipping alpha image: deconvolver='{0}' (mtmfs required).".format(deconvolver))
         return
     if stokes.upper() == 'I':
         # CASA's tclean already wrote .alpha + .alpha.error during restoration.
-        return
-    if bdsf is None:
-        logger.warning("Skipping alpha image: pybdsf not available in this environment.")
         return
 
     img0   = imagename + '.image.tt0'
@@ -152,9 +145,9 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
             logger.warning("Skipping alpha image: '{0}' not found.".format(f))
             return
 
-    # Restoring beam for all alpha products: the residual-derived error map carries no
-    # beam, so read it from .psf.tt0 (falling back to the restored Stokes-I image) and
-    # stamp it explicitly onto every product below so PyBDSF/FITS can always read BMAJ/BMIN/BPA.
+    # Restoring beam for the alpha products: the residual-derived error map carries no beam,
+    # so read it from .psf.tt0 (falling back to the restored Stokes-I image) and stamp it
+    # explicitly onto both maps so CARTA/FITS can always read BMAJ/BMIN/BPA.
     beam = _get_restoring_beam(psf0) or _get_restoring_beam(img0)
     if beam is None:
         logger.warning("No restoring beam found in '{0}' or '{1}'; alpha products may lack beam info.".format(psf0, img0))
@@ -167,11 +160,8 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
             imsubimage(imagename=src, outfile=si, stokes='I')
         work[label] = si
 
-    alpha_out      = _versioned(imagename + '.alpha.image')
-    alpha_err_out  = _versioned(imagename + '.alpha.error.image')
-    alpha_err_rms  = imagename + '.alpha.error.rms'
-    alpha_clip_out = _versioned(imagename + '.alpha.error.5sigma.clip.image')
-    alpha_sig_out  = _versioned(imagename + '.alpha.{0}sigma.image'.format(int(alpha_nsigma)))
+    alpha_out     = _versioned(imagename + '.alpha.image')
+    alpha_err_out = _versioned(imagename + '.alpha.error.image')
 
     logger.info("Building alpha map -> {0}".format(os.path.basename(alpha_out)))
     immath(imagename=[work['img1'], work['img0']], expr='IM0/IM1', outfile=alpha_out)
@@ -184,39 +174,7 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
            outfile=alpha_err_out,
            imagemd=work['img0'])  # Inherit coordsys from restored Stokes I (residuals carry no restoring beam)
     _unmask_all(alpha_err_out)
-    _set_restoring_beam(alpha_err_out, beam)  # Explicit beam from .psf.tt0 so PyBDSF can read BMAJ/BMIN/BPA
-
-    # PyBDSF wants a FITS file for header stability (matches master's selfcal pattern).
-    fitsname = alpha_err_out + '.fits'
-    if not os.path.exists(fitsname):
-        exportfits(imagename=alpha_err_out, fitsimage=fitsname)
-
-    logger.info("Running PyBDSF for 2D RMS map of alpha error -> {0}".format(os.path.basename(alpha_err_rms)))
-    # We only need the 2D background RMS map, not a source list. stop_at='isl' computes the
-    # rms/mean maps and finds islands, then stops BEFORE Gaussian fitting. This matters here:
-    # the alpha-error map is sqrt((resid/tt0)^2 + ...) and off-source tt0 ~ 0, so the division
-    # blows up across the whole field and PyBDSF detects ~10^5 spurious islands. Without
-    # stop_at='isl' it then tries to Gaussian-fit all of them and hangs for many hours; the
-    # exported rms map is unaffected because it's produced before the fitting stage.
-    img = bdsf.process_image(fitsname, adaptive_rms_box=True,
-        rms_box_bright=(40, 5), advanced_opts=True, mean_map='map',
-        rms_box=(100, 30), rms_map=True, thresh='hard', thresh_isl=3.0, thresh_pix=5.0,
-        blank_limit=1e-10, stop_at='isl')
-    img.export_image(outfile=alpha_err_rms, img_type='rms', img_format='casa', clobber=True)
-
-    logger.info("Clipping alpha error pixel-wise at 5 x RMS -> {0}".format(os.path.basename(alpha_clip_out)))
-    immath(imagename=[alpha_err_out, alpha_err_rms],
-           expr='iif(IM0 < 5*IM1, IM0, 0/0)',
-           outfile=alpha_clip_out,
-           imagemd=work['img0'])
-    _set_restoring_beam(alpha_clip_out, beam)
-
-    logger.info("Masking alpha where |alpha| > {0} x clipped error -> {1}".format(alpha_nsigma, os.path.basename(alpha_sig_out)))
-    immath(imagename=[alpha_out, alpha_clip_out],
-           expr='iif(abs(IM0) > {0}*IM1, IM0, 0/0)'.format(alpha_nsigma),
-           outfile=alpha_sig_out,
-           imagemd=work['img0'])
-    _set_restoring_beam(alpha_sig_out, beam)
+    _set_restoring_beam(alpha_err_out, beam)
 
 
 def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):

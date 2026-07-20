@@ -12,7 +12,7 @@ This is a personal fork of the [IDIA MeerKAT pipeline](https://github.com/idia-a
 * **`polcalfield` config option** (`[crosscal]`) — explicit fallback XY-phase calibrator, only used when no canonical pol calibrator (3C286/3C138/3C48/J1130-1449) is found in the MS. Optional; defaults to `''` and is auto-annotated by `-B`.
 * **`atrous_do` config option** (`[selfcal]`) — enables PyBDSF à-trous (wavelet) decomposition during self-cal source finding to better recover extended/diffuse emission. Defaults to `False` (existing behaviour). Applied in `selfcal_part2.py`.
 * **Science-imaging masking modes** (`[image]`) — choose `usemask = 'user'` (standard, uses `mask`) or `usemask = 'auto-multithresh'` (uses `sidelobethreshold`, `noisethreshold`, `lownoisethreshold`, `negativethreshold` instead).
-* **PyBDSF-driven spectral-index (alpha) imaging** — for multi-Stokes / non-`I` `mtmfs` runs, the science imaging step builds a noise-thresholded `alpha` map and `alpha.error` map (with a restoring beam inherited from Stokes I so PyBDSF can read it), controlled by `alpha_nsigma`.
+* **Spectral-index (alpha) imaging** — for multi-Stokes / non-`I` `mtmfs` runs, the science imaging step builds a raw `alpha` map (`tt1/tt0`) and its `alpha.error` map, each stamped with the restoring beam from Stokes I. Any noise thresholding / sigma clipping is intentionally left to the user to apply separately on these maps.
 * **Radio-continuum cube imaging** (`[image]`) — set `spw_cube = True` to image each spectral window separately (into `SPW_MFSs/`) and then merge them into a single 4D (RA, Dec, Stokes, frequency) cube instead of one full-bandwidth averaged image. Imaging is parallelised as a **SLURM job array** — one job per SPW, run concurrently (array size = `nspw`, or `len(spwid)` if set) — followed by a single dependent `spw_cube_concat` job that assembles the cube once the whole array finishes. Each SPW keeps its own restoring beam, so the cube is written with a per-plane CASA beam table (the correct, frequency-dependent beam on every channel). Set `common_beam = True` to *also* convolve every slice to a single common (largest) beam — written to `*.cube.commonbeam.image` — instead of relying on the per-plane beam table. A companion `*.cube.freqfile.dat` is written next to the cube — a one-per-slice list of each SPW's central frequency (Hz, ascending, matching the cube's channel order), so the exact frequency of every slice is known even with non-uniform SPW spacing. Frequency labels are auto-derived from the MS metadata, `spwid` optionally restricts which SPWs are imaged (`''` = all), and combining with `stokes = 'IQUV'` gives a full-Stokes continuum cube.
 * **Automatic log cleanup** — once all pipeline jobs finish, a lightweight dependent SLURM job moves stray `casa*.log` files from the working directory into the `logs/` folder.
 * **Python 3.12 fixes** — `SafeConfigParser` → `RawConfigParser`, invalid escape-sequence `SyntaxWarning`s resolved.
@@ -118,7 +118,7 @@ These keys are added/used by this fork. They all have sensible defaults, so exis
     <tr>
       <td><code>alpha_nsigma</code></td>
       <td><code>1.0</code></td>
-      <td>Sigma cut for the final alpha mask (used when <code>stokes != 'I'</code> to produce a spectral-index image).</td>
+      <td>Deprecated / unused — kept for backward compatibility. (Previously the sigma cut for an alpha mask; the alpha step now just writes the raw <code>alpha</code> + <code>alpha.error</code> maps.)</td>
     </tr>
     <tr>
       <td><code>spw_cube</code></td>
