@@ -261,6 +261,39 @@ def do_pb_corr(inpimage, pbthreshold=0, pbband='LBand'):
     ia.close()
 
 
+def _extract_stokesI(imname, outname):
+    """Extract the Stokes-I plane using only the ia/rg toolkit (in-process, serial).
+
+    This deliberately avoids the imsubimage CASA task: under mpirun/casampi that task
+    reaches into the MPI framework and, on a parallel-tclean multi-Stokes image, can
+    soft-hang (rank 0 waits indefinitely). The toolkit calls below all run in-process on
+    the rank executing the script, with no MPI dispatch, so there is nothing to stall on."""
+    from casatools import regionmanager
+    rg = regionmanager()
+    ia.open(imname)
+    csys = ia.coordsys()
+    shape = list(ia.shape())
+    # Locate the Stokes axis and the pixel index of Stokes I robustly (don't assume IQUV order).
+    try:
+        sax = csys.findaxisbyname('Stokes')
+    except Exception:
+        sax = 2
+    try:
+        i_idx = list(csys.stokes()).index('I')
+    except Exception:
+        i_idx = 0
+    blc = [0] * len(shape)
+    trc = [s - 1 for s in shape]
+    blc[sax] = i_idx
+    trc[sax] = i_idx
+    reg = rg.box(blc=blc, trc=trc)
+    sub = ia.subimage(outfile=outname, region=reg, dropdeg=False, overwrite=True)
+    sub.done()
+    csys.done()
+    ia.close()
+    rg.done()
+
+
 def _parse_spwid(spwid):
     """Normalise spwid to a list of int SPW IDs, accepting either form:
     a list ([0,1,2]) or a comma-separated string ('0,1,2'). Empty ('' / [] / None) -> []."""
@@ -427,10 +460,10 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
         logger.info('pbcorr=False: skipping katbeam primary-beam correction (no .katbeam* products written).')
     else:
         if len(stokes) > 1 and 'I' in stokes.upper():
-            logger.warning('Output image "{0}" includes multiple Stokes, but katbeam only applicable to Stokes I. Selecting Stokes I and applying PB correction.'.format(imname))
+            logger.warning('Output image "{0}" includes multiple Stokes, but katbeam only applicable to Stokes I. Selecting Stokes I (via ia toolkit, no MPI task) and applying PB correction.'.format(imname))
             stokesI = imname + '.StokesI'
             if not os.path.exists(stokesI):
-                imsubimage(imagename=imname, outfile=stokesI, stokes='I')
+                _extract_stokesI(imname, stokesI)
             imname = stokesI
 
         if 'I' in stokes.upper():
