@@ -92,8 +92,9 @@ gridder = 'wproject'
 deconvolver = 'mtmfs'
 restoringbeam = ''
 stokes = 'I'
-pbthreshold = 0.1                 # Threshold below which to mask the PB for PB correction
-pbband = 'LBand'                  # Which band to use to generate the PB - one of "LBand" "SBand" or "UHF"
+pbcorr = False                    # Apply katbeam primary-beam correction (writes .katbeam.pb + .katbeam_pbcor.image)? OFF by default - slow on large multi-Stokes images; set True to re-enable. pbthreshold/pbband below only apply when pbcorr = True
+pbthreshold = 0.1                 # Threshold below which to mask the PB for PB correction (only used when pbcorr = True)
+pbband = 'LBand'                  # Which band to use to generate the PB - one of "LBand" "SBand" or "UHF" (only used when pbcorr = True)
 mask = ''
 rmsmap = ''
 outlierfile = ''

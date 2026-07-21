@@ -369,7 +369,8 @@ def _concat_spw_cube(imagenames, central_freqs, outname, deconvolver, common_bea
 
 def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms,
                      gridder, deconvolver, restoringbeam, stokes, mask, outlierfile, pbthreshold, pbband,
-                     usemask, sidelobethreshold, noisethreshold, lownoisethreshold, negativethreshold, alpha_nsigma):
+                     usemask, sidelobethreshold, noisethreshold, lownoisethreshold, negativethreshold, alpha_nsigma,
+                     pbcorr=False):
     """Run tclean (+ alpha + PB correction) for a single image / SPW selection.
 
     spw is a tclean spw-selection string ('' for the whole band, or e.g. '0')."""
@@ -419,20 +420,26 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
     # (stokes != 'I'); CASA already auto-writes alpha+error for plain Stokes-I mtmfs runs.
     make_alpha(imagename, deconvolver, stokes, alpha_nsigma=alpha_nsigma)
 
-    if len(stokes) > 1 and 'I' in stokes.upper():
-        logger.warning('Output image "{0}" includes multiple Stokes, but katbeam only applicable to Stokes I. Selecting Stokes I and applying PB correction.'.format(imname))
-        stokesI = imname + '.StokesI'
-        if not os.path.exists(stokesI):
-            imsubimage(imagename=imname, outfile=stokesI, stokes='I')
-        imname = stokesI
+    # katbeam primary-beam correction (produces .katbeam.pb + .katbeam_pbcor.image) is OFF by
+    # default in this fork — it is slow on large multi-Stokes images and most users apply their
+    # own PB correction. Enable it with pbcorr=True in the [image] config section.
+    if not pbcorr:
+        logger.info('pbcorr=False: skipping katbeam primary-beam correction (no .katbeam* products written).')
+    else:
+        if len(stokes) > 1 and 'I' in stokes.upper():
+            logger.warning('Output image "{0}" includes multiple Stokes, but katbeam only applicable to Stokes I. Selecting Stokes I and applying PB correction.'.format(imname))
+            stokesI = imname + '.StokesI'
+            if not os.path.exists(stokesI):
+                imsubimage(imagename=imname, outfile=stokesI, stokes='I')
+            imname = stokesI
 
-    if 'I' in stokes.upper():
-        do_pb_corr(imname, pbthreshold, pbband)
+        if 'I' in stokes.upper():
+            do_pb_corr(imname, pbthreshold, pbband)
 
 
 def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms, gridder, deconvolver, restoringbeam, stokes, mask, rmsmap, outlierfile, keepmms, pbthreshold, pbband,
                   usemask='user', sidelobethreshold=0.5, noisethreshold=5.0, lownoisethreshold=0.01, negativethreshold=0.0,
-                  alpha_nsigma=1.0, spw_cube=False, common_beam=False, spwid=''):
+                  alpha_nsigma=1.0, spw_cube=False, common_beam=False, spwid='', pbcorr=False):
 
     visbase = os.path.split(vis.rstrip('/ '))[1] # Get only vis name, not entire path
     extn = '.ms' if keepmms==False else '.mms'
@@ -451,7 +458,7 @@ def science_image(vis, cell, robust, imsize, wprojplanes, niter, threshold, mult
                   outlierfile=outlierfile, pbthreshold=pbthreshold, pbband=pbband, usemask=usemask,
                   sidelobethreshold=sidelobethreshold, noisethreshold=noisethreshold,
                   lownoisethreshold=lownoisethreshold, negativethreshold=negativethreshold,
-                  alpha_nsigma=alpha_nsigma)
+                  alpha_nsigma=alpha_nsigma, pbcorr=pbcorr)
 
     if spw_cube:
         spw_ids, labels, central_freqs = _resolve_spws(vis, spwid)
