@@ -533,3 +533,21 @@ if __name__ == '__main__':
     args,params = bookkeeping.get_imaging_params()
     science_image(**params)
     bookkeeping.rename_logs(logfile)
+
+    # Ensure the job terminates promptly once the work is done. When tclean is skipped (the
+    # image already exists) the casampi MPI servers are started at import but never engaged, and
+    # the interpreter can then hang at exit on an MPI teardown handshake that never completes —
+    # the job sits idle until the SLURM time limit (observed: 8 s of real work, then a ~2.5 h
+    # stall). Stop the MPI servers cleanly if we can, then hard-exit so we never idle.
+    import sys
+    try:
+        from casampi.MPIEnvironment import MPIEnvironment
+        if getattr(MPIEnvironment, 'is_mpi_enabled', False) and getattr(MPIEnvironment, 'is_mpi_client', False):
+            from casampi.MPICommandClient import MPICommandClient
+            MPICommandClient().stop_services()
+    except Exception as e:
+        logger.warning('MPI server shutdown skipped/failed ({0}); forcing exit anyway.'.format(e))
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
