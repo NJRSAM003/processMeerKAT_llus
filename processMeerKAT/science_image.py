@@ -23,6 +23,11 @@ from katbeam import JimBeam
 from casatools import image, msmetadata
 ia = image()
 
+# Set True whenever tclean is skipped (image already exists). In that case the casampi MPI
+# servers were spun up at import but never engaged, so the job would otherwise hang at exit and
+# idle to the SLURM time limit; __main__ uses this flag to force a prompt MPI teardown.
+_TCLEAN_SKIPPED = False
+
 
 def _versioned(path):
     """Return path unchanged if it doesn't exist, else path_2, path_3, ..."""
@@ -428,9 +433,12 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
 
     spw is a tclean spw-selection string ('' for the whole band, or e.g. '0')."""
 
+    global _TCLEAN_SKIPPED
+
     # If everything this step would produce is already on disk, do nothing — this makes a rerun
     # a fast, clean "complete" pass instead of redoing (or re-hanging on) finished work.
     if _products_complete(imagename, deconvolver, stokes, pbcorr):
+        _TCLEAN_SKIPPED = True
         logger.info('All expected products for "{0}" already exist — nothing to do, skipping.'.format(imagename))
         return
 
@@ -467,6 +475,7 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
         tclean(**tclean_kwargs)
 
     else:
+        _TCLEAN_SKIPPED = True
         logger.warning('Output image "{0}" already exists. Skipping tclean step and applying pb correction.'.format(imname))
 
     # Parallel/multi-Stokes mtmfs often leaves the restored .image.tt* without a global beam,
@@ -560,29 +569,41 @@ if __name__ == '__main__':
     science_image(**params)
     bookkeeping.rename_logs(logfile)
 
-    # Ensure the job ALWAYS terminates promptly once the work is done. When tclean is skipped
-    # (the image already exists) the casampi MPI servers are started at import but never engaged,
-    # and the interpreter can then hang at exit on an MPI teardown handshake that never completes
-    # — the job sits idle until the SLURM time limit (observed: 8 s of real work, then a ~2.5 h
-    # stall ending in a TIME LIMIT kill). We stop the MPI servers cleanly for a tidy COMPLETED
-    # status, but guard the whole thing with a hard timeout: if the teardown itself is what
-    # hangs, an alarm fires and forces the exit, so the job can never idle to the time limit.
-    import sys, signal
+    # If tclean was skipped (image already existed), the casampi MPI servers were spun up at
+    # import but never engaged. The interpreter would then hang at exit, and — crucially — the
+    # orphaned server ranks keep mpirun alive even if the client (rank 0) exits, so the job
+    # idles to the SLURM time limit (observed: 8 s of real work, then a ~2.5 h stall). Force a
+    # teardown of the WHOLE MPI world so the job ends immediately. (Fresh parallel-tclean runs
+    # engage/teardown the servers normally and skip all of this.)
+    if _TCLEAN_SKIPPED:
+        import sys, signal
 
-    def _hard_exit(signum=None, frame=None):
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(0)
+        def _terminate(signum=None, frame=None):
+            sys.stdout.flush()
+            sys.stderr.flush()
+            # os._exit(0) only kills rank 0 — the blocked server ranks would keep mpirun alive.
+            # MPI_Abort tears down every rank so the job actually ends (exit code 0 -> COMPLETED
+            # on OpenMPI, which returns the abort code).
+            try:
+                from casampi.MPIEnvironment import MPIEnvironment
+                if getattr(MPIEnvironment, 'is_mpi_enabled', False):
+                    from mpi4py import MPI
+                    if MPI.COMM_WORLD.Get_size() > 1:
+                        MPI.COMM_WORLD.Abort(0)
+            except Exception:
+                pass
+            os._exit(0)
 
-    try:
-        signal.signal(signal.SIGALRM, _hard_exit)
-        signal.alarm(120)  # backstop: never let MPI teardown stall the job beyond 2 minutes
-        from casampi.MPIEnvironment import MPIEnvironment
-        if getattr(MPIEnvironment, 'is_mpi_enabled', False) and getattr(MPIEnvironment, 'is_mpi_client', False):
-            from casampi.MPICommandClient import MPICommandClient
-            MPICommandClient().stop_services()
-        signal.alarm(0)
-    except Exception as e:
-        logger.warning('MPI server shutdown skipped/failed ({0}); forcing exit anyway.'.format(e))
+        # Best-effort clean server shutdown first (tidier), then guarantee termination.
+        try:
+            signal.signal(signal.SIGALRM, _terminate)
+            signal.alarm(60)  # if the clean shutdown itself hangs, abort after 60 s
+            from casampi.MPIEnvironment import MPIEnvironment
+            if getattr(MPIEnvironment, 'is_mpi_enabled', False) and getattr(MPIEnvironment, 'is_mpi_client', False):
+                from casampi.MPICommandClient import MPICommandClient
+                MPICommandClient().stop_services()
+            signal.alarm(0)
+        except Exception as e:
+            logger.warning('MPI server shutdown attempt failed ({0}); forcing teardown.'.format(e))
 
-    _hard_exit()
+        _terminate()
