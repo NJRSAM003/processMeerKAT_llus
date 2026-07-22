@@ -157,7 +157,7 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     for label, src in [('img0', img0), ('img1', img1), ('resid0', resid0), ('resid1', resid1)]:
         si = src + '.StokesI'
         if not os.path.exists(si):
-            imsubimage(imagename=src, outfile=si, stokes='I')
+            _extract_stokesI(src, si)  # ia toolkit, not imsubimage — no MPI soft-hang
         work[label] = si
 
     alpha_out     = _versioned(imagename + '.alpha.image')
@@ -400,6 +400,26 @@ def _concat_spw_cube(imagenames, central_freqs, outname, deconvolver, common_bea
     return outname
 
 
+def _products_complete(imagename, deconvolver, stokes, pbcorr):
+    """True if every expected final product for this image already exists, so the whole step
+    can be skipped and the job can end as a clean, complete run (no re-imaging, no duplicate
+    _2/_3 alpha maps). Mirrors exactly what _build_and_clean would produce for these settings."""
+    imname = imagename + ('.image.tt0' if deconvolver == 'mtmfs' else '.image')
+    if not os.path.exists(imname):
+        return False
+    # Alpha maps: produced only for multi-/non-I mtmfs runs (CASA auto-writes them for plain I).
+    if deconvolver == 'mtmfs' and stokes.upper() != 'I':
+        if not (os.path.exists(imagename + '.alpha.image') and os.path.exists(imagename + '.alpha.error.image')):
+            return False
+    # katbeam PB correction: only when explicitly enabled (pbcorr=True) and Stokes I present.
+    if pbcorr and 'I' in stokes.upper():
+        multi = len(stokes) > 1 and 'I' in stokes.upper()
+        base = (imname + '.StokesI') if multi else imname
+        if not os.path.exists(base.replace('.image', '.katbeam_pbcor.image')):
+            return False
+    return True
+
+
 def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, niter, threshold, multiscale, nterms,
                      gridder, deconvolver, restoringbeam, stokes, mask, outlierfile, pbthreshold, pbband,
                      usemask, sidelobethreshold, noisethreshold, lownoisethreshold, negativethreshold, alpha_nsigma,
@@ -407,6 +427,12 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
     """Run tclean (+ alpha + PB correction) for a single image / SPW selection.
 
     spw is a tclean spw-selection string ('' for the whole band, or e.g. '0')."""
+
+    # If everything this step would produce is already on disk, do nothing — this makes a rerun
+    # a fast, clean "complete" pass instead of redoing (or re-hanging on) finished work.
+    if _products_complete(imagename, deconvolver, stokes, pbcorr):
+        logger.info('All expected products for "{0}" already exist — nothing to do, skipping.'.format(imagename))
+        return
 
     if deconvolver == 'mtmfs':
         imname = imagename + '.image.tt0'
@@ -534,20 +560,29 @@ if __name__ == '__main__':
     science_image(**params)
     bookkeeping.rename_logs(logfile)
 
-    # Ensure the job terminates promptly once the work is done. When tclean is skipped (the
-    # image already exists) the casampi MPI servers are started at import but never engaged, and
-    # the interpreter can then hang at exit on an MPI teardown handshake that never completes —
-    # the job sits idle until the SLURM time limit (observed: 8 s of real work, then a ~2.5 h
-    # stall). Stop the MPI servers cleanly if we can, then hard-exit so we never idle.
-    import sys
+    # Ensure the job ALWAYS terminates promptly once the work is done. When tclean is skipped
+    # (the image already exists) the casampi MPI servers are started at import but never engaged,
+    # and the interpreter can then hang at exit on an MPI teardown handshake that never completes
+    # — the job sits idle until the SLURM time limit (observed: 8 s of real work, then a ~2.5 h
+    # stall ending in a TIME LIMIT kill). We stop the MPI servers cleanly for a tidy COMPLETED
+    # status, but guard the whole thing with a hard timeout: if the teardown itself is what
+    # hangs, an alarm fires and forces the exit, so the job can never idle to the time limit.
+    import sys, signal
+
+    def _hard_exit(signum=None, frame=None):
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+
     try:
+        signal.signal(signal.SIGALRM, _hard_exit)
+        signal.alarm(120)  # backstop: never let MPI teardown stall the job beyond 2 minutes
         from casampi.MPIEnvironment import MPIEnvironment
         if getattr(MPIEnvironment, 'is_mpi_enabled', False) and getattr(MPIEnvironment, 'is_mpi_client', False):
             from casampi.MPICommandClient import MPICommandClient
             MPICommandClient().stop_services()
+        signal.alarm(0)
     except Exception as e:
         logger.warning('MPI server shutdown skipped/failed ({0}); forcing exit anyway.'.format(e))
 
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(0)
+    _hard_exit()
