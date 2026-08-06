@@ -55,6 +55,8 @@ CONFIG = 'default_config.txt'
 TMP_CONFIG = '.config.tmp'
 MASTER_SCRIPT = 'submit_pipeline.sh'
 SPW_PREFIX = '*:'
+#Echoed at the end of the master submission script to point users at the archive.sh convenience script
+ARCHIVE_ECHO = 'echo "Run ./archive.sh to archive the keep-worthy outputs (science images, cubes, plots, target MMS) and remove the rest; run ./archive.sh --help for more information."\n'
 
 #Set global values for field, crosscal and SLURM arguments copied to config file, and some of their default values
 FIELDS_CONFIG_KEYS = ['fluxfield','bpassfield','phasecalfield','targetfields','extrafields']
@@ -810,6 +812,9 @@ def write_spw_master(filename,config,SPWs,precal_scripts,postcal_scripts,submit,
     write_bash_job_script(master, errorScript, extn, do % (SPWs,errorScript,'',header), r'find errors \(after pipeline has run\)', dir=dir,prefix=prefix)
     write_bash_job_script(master, timingScript, extn, do % (SPWs,timingScript,'',header), r'display start and end timestamps \(after pipeline has run\)', dir=dir,prefix=prefix)
 
+    #Point users at the archive.sh convenience script (symlinked into this top-level directory at -R time)
+    master.write('\n' + ARCHIVE_ECHO)
+
     #Close master submission script and make executable
     master.close()
     os.chmod(filename, 509)
@@ -924,6 +929,10 @@ def write_master(filename,config,scripts=[],submit=False,dir='jobScripts',pad_le
 
     #Write each job script - kill script, summary script, error script, and timing script
     write_all_bash_jobs_scripts(master,extn,IDs='IDs',dir=dir,echo=echo,pad_length=pad_length,slurm_kwargs=slurm_kwargs)
+
+    #Point users at the archive.sh convenience script (symlinked into the top-level directory at -R time)
+    if echo:
+        master.write('\n' + ARCHIVE_ECHO)
 
     #Close master submission script and make executable
     master.close()
