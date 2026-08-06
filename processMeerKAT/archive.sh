@@ -60,9 +60,7 @@ Deleted: per-SPW *MHz* dirs, calibrator MMSs, .gcal*, *.contcube[.fits], logs, e
 Options:
   -t, --target NAME[,NAME2,...]
                     Target field name(s) whose MMS to keep (e.g. --target PGC31359).
-                    Used instead of the target name read from the config; the
-                    config file itself is not changed. If omitted, the target is
-                    read from the config.
+                    If omitted, the target is automatically read from .config.tmp
   -C, --config FILE
                     processMeerKAT config to read 'targetfields' from ([fields]).
                     Auto-detected if omitted (.config.tmp, then first *.txt).
