@@ -33,8 +33,9 @@
 #   - per-SPW *MHz* directories, calibrator .mms, .gcal*/.bcal* tables,
 #   - *.contcube / *.contcube.fits quick-look cross-cal diagnostics, logs, etc.
 #
-# Nothing is deleted unless you pass -y/--confirm-delete (or set
+# Nothing is deleted unless you pass -d/--confirm-delete (or set
 # CONFIRM_DELETE=true below); by default you only get a preview.
+# The config file used is kept in place -- it is never archived or deleted.
 
 set -uo pipefail
 
@@ -59,26 +60,28 @@ Deleted: per-SPW *MHz* dirs, calibrator MMSs, .gcal*, *.contcube[.fits], logs, e
 Options:
   -t, --target NAME[,NAME2,...]
                     Target field name(s) whose MMS to keep (e.g. --target PGC31359).
-                    Overrides the config. If omitted it is read from the config.
+                    Used instead of the target name read from the config; the
+                    config file itself is not changed. If omitted, the target is
+                    read from the config.
   -C, --config FILE
                     processMeerKAT config to read 'targetfields' from ([fields]).
                     Auto-detected if omitted (.config.tmp, then first *.txt).
-  -y, --confirm-delete
+  -d, --confirm-delete
                     Actually perform the cleanup deletion (default: preview only).
   -a, --archive-dir DIR
                     Name of the archive folder (default: ${ARCHIVE_DIR}).
   -h, --help        Show this help and exit.
 
 Notes:
-  * Safe by default: nothing is deleted until you pass -y/--confirm-delete.
-  * If no target can be resolved, ALL top-level .mms/.ms are kept (conservative)
-    rather than risk deleting the science MMS.
+  * Safe by default: nothing is deleted until you pass -d/--confirm-delete.
+  * The config file is kept in place -- it is never archived or deleted.
+  * If no target can be resolved, ALL top-level .mms/.ms are kept.
 
 Examples:
   archive.sh --help
   cd pgc31359 && archive.sh                 # preview (auto-reads .config.tmp)
   cd pgc31359 && archive.sh --confirm-delete
-  archive.sh --target PGC31359 -y
+  archive.sh --target PGC31359 -d
 EOF
 }
 
@@ -88,7 +91,7 @@ while [[ $# -gt 0 ]]; do
         -t|--target)         TARGET="${2:-}"; shift 2 ;;
         -C|--config)         CONFIG="${2:-}"; shift 2 ;;
         -a|--archive-dir)    ARCHIVE_DIR="${2:-}"; shift 2 ;;
-        -y|--confirm-delete) CONFIRM_DELETE=true; shift ;;
+        -d|--confirm-delete) CONFIRM_DELETE=true; shift ;;
         -h|--help)           usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; echo "Try --help." >&2; exit 2 ;;
     esac
@@ -162,5 +165,5 @@ if [ "$CONFIRM_DELETE" = true ]; then
     find . -mindepth 1 -maxdepth 1 "${CLEANUP_EXCLUDES[@]}" -exec rm -rf {} +
     echo "Cleanup complete."
 else
-    echo "CONFIRM_DELETE is false - preview only, nothing deleted. Use -y/--confirm-delete (or set CONFIRM_DELETE=true) to actually delete."
+    echo "CONFIRM_DELETE is false - preview only, nothing deleted. Use -d/--confirm-delete (or set CONFIRM_DELETE=true) to actually delete."
 fi
