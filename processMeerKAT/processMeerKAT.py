@@ -1128,6 +1128,23 @@ def write_jobs(config, scripts=[], threadsafe=[], containers=[], num_precal_scri
         #Build master pipeline submission script
         write_master(MASTER_SCRIPT,config,scripts=scripts,submit=submit,pad_length=pad_length,verbose=verbose,echo=echo,dependencies=dependencies,slurm_kwargs=kwargs)
 
+    #Drop an archive.sh symlink alongside the other convenience scripts (cleanup.sh, etc.) in the
+    #top-level reduction directory, pointing at the pipeline's shipped archive.sh, so users can run
+    #it to archive the finished products. Skipped inside per-SPW subdirectories (whose names match
+    #the SPW frequency labels), where archiving individual SPWs is not the intended workflow.
+    spw_labels = set()
+    for lbl in crosscal_kwargs['spw'].split(','):
+        lbl = lbl.strip()
+        spw_labels.update({lbl, lbl.replace('*:', '')})
+    if os.path.basename(os.getcwd().rstrip('/')) not in spw_labels:
+        archive_src = os.path.abspath(os.path.join(SCRIPT_DIR, 'archive.sh'))
+        try:
+            if os.path.islink('archive.sh') or os.path.exists('archive.sh'):
+                os.remove('archive.sh')
+            os.symlink(archive_src, 'archive.sh')
+        except OSError as err:
+            logger.warning('Could not create archive.sh symlink in working directory: {0}'.format(err))
+
 
 def default_config(arg_dict):
 
