@@ -456,9 +456,6 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
             weighting='briggs', robust=robust, niter=niter, scales=multiscale,
             threshold=threshold, nterms=nterms, calcpsf=True, outlierfile=outlierfile,
             pblimit=-1, restoringbeam=restoringbeam, parallel=True,
-            # Always populate MODEL_DATA so downstream direction-dependent / 3rd-generation
-            # calibration (e.g. peeling, DDFacet/killMS, wsclean-based 3GC) has the science
-            # model available to work from without re-imaging.
             savemodel='modelcolumn',
         )
 
