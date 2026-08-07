@@ -412,7 +412,7 @@ def main():
 
     # Decide what `polcalfield` should look like, based on which canonical pol
     # calibrators (if any) are already in this MS. The value itself stays empty
-    # — it's a fallback only used when no canonical pol cal exists — but the
+    # - it's a fallback only used when no canonical pol cal exists - but the
     # inline comment is set so the user sees at a glance why it is or isn't needed.
     KNOWN_POLCALS = {
         '3C286': ["3C286", "1328+307", "1331+305", "J1331+3030"],
@@ -423,7 +423,7 @@ def main():
     ms_fields = set(msmd.fieldnames())
     detected = sorted({label for label, names in KNOWN_POLCALS.items() if ms_fields.intersection(names)})
     if detected:
-        polcal_comment = "# {0} already in MS — this fallback is not required (leave this field empty).".format(', '.join(detected))
+        polcal_comment = "# {0} already in MS - this fallback is not required (leave this field empty).".format(', '.join(detected))
     else:
         polcal_comment = "# No canonical pol calibrator (3C286/3C138/3C48/J1130-1449) found in MS. Set this to a phase/secondary calibrator name (e.g. {0}) to use the L-band catalogue model for XY ambiguity resolution (leave this field empty if you don't want the fallback).".format(fields.get('phasecalfield', "''").strip("'"))
     config_parser.overwrite_config(args.config, conf_dict={'polcalfield' : "''  {0}".format(polcal_comment)}, conf_sec='crosscal')

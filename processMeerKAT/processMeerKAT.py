@@ -626,7 +626,7 @@ def write_sbatch(script,args,nodes=1,tasks=16,mem=MEM_PER_NODE_GB_LIMIT,name="jo
             # Threadsafe MPI scripts: cap at 8 tasks
             params['tasks'] = 8
 
-    # concat is I/O-bound not compute-bound — 1 task prevents I/O contention timeouts
+    # concat is I/O-bound not compute-bound - 1 task prevents I/O contention timeouts
     if 'concat' in script:
         params['tasks'] = 1
         params['cpus'] = 1
@@ -1704,7 +1704,7 @@ def get_config_kwargs(config,section,expected_keys,optional_keys=[]):
     expected_keys : list
         List of expected (required) keys.
     optional_keys : list, optional
-        Keys that are recognised but not required — won't trigger "unknown" warnings or "missing" errors.
+        Keys that are recognised but not required - won't trigger "unknown" warnings or "missing" errors.
 
     Returns:
     --------

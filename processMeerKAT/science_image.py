@@ -95,7 +95,7 @@ def _stamp_beam_from_psf(imagename, deconvolver):
     PyBDSF and FITS export have no beam to read/draw. We take the beam from .psf.tt0 (the
     trusted fitted beam) and stamp the same single global beam onto every Jy/beam product so
     they're all identical. Products that aren't brightness maps (.model, .pb, .sumwt) are left
-    untouched — a restoring beam is meaningless there (model is Jy/pixel, pb/sumwt are
+    untouched - a restoring beam is meaningless there (model is Jy/pixel, pb/sumwt are
     dimensionless), and CARTA doesn't need one to display them."""
     psf = imagename + ('.psf.tt0' if deconvolver == 'mtmfs' else '.psf')
     beam = _get_restoring_beam(psf)
@@ -157,12 +157,12 @@ def make_alpha(imagename, deconvolver, stokes, alpha_nsigma=1.0):
     if beam is None:
         logger.warning("No restoring beam found in '{0}' or '{1}'; alpha products may lack beam info.".format(psf0, img0))
 
-    # Extract the Stokes I plane from each Taylor-term image — alpha is a Stokes-I concept.
+    # Extract the Stokes I plane from each Taylor-term image - alpha is a Stokes-I concept.
     work = {}
     for label, src in [('img0', img0), ('img1', img1), ('resid0', resid0), ('resid1', resid1)]:
         si = src + '.StokesI'
         if not os.path.exists(si):
-            _extract_stokesI(src, si)  # ia toolkit, not imsubimage — no MPI soft-hang
+            _extract_stokesI(src, si)  # ia toolkit, not imsubimage - no MPI soft-hang
         work[label] = si
 
     alpha_out     = _versioned(imagename + '.alpha.image')
@@ -344,7 +344,7 @@ def _concat_spw_cube(imagenames, central_freqs, outname, deconvolver, common_bea
     Each per-SPW image is a single-frequency, full-Stokes plane at its own SPW frequency and
     carries its own restoring beam (stamped from that SPW's .psf.tt0). ia.imageconcat stitches
     them along the spectral axis into a single paged cube on disk. Because the input beams
-    differ between SPWs, CASA writes a PER-PLANE BEAM TABLE into the cube automatically — so
+    differ between SPWs, CASA writes a PER-PLANE BEAM TABLE into the cube automatically - so
     CARTA shows the correct (frequency-dependent) beam on every channel. reorder=True sorts the
     planes by frequency; relax=True tolerates the non-uniform SPW spacing left after flagging.
 
@@ -435,11 +435,11 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
 
     global _TCLEAN_SKIPPED
 
-    # If everything this step would produce is already on disk, do nothing — this makes a rerun
+    # If everything this step would produce is already on disk, do nothing - this makes a rerun
     # a fast, clean "complete" pass instead of redoing (or re-hanging on) finished work.
     if _products_complete(imagename, deconvolver, stokes, pbcorr):
         _TCLEAN_SKIPPED = True
-        logger.info('All expected products for "{0}" already exist — nothing to do, skipping.'.format(imagename))
+        logger.info('All expected products for "{0}" already exist - nothing to do, skipping.'.format(imagename))
         return
 
     if deconvolver == 'mtmfs':
@@ -480,7 +480,7 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
         logger.warning('Output image "{0}" already exists. Skipping tclean step and applying pb correction.'.format(imname))
 
     # Parallel/multi-Stokes mtmfs often leaves the restored .image.tt* without a global beam,
-    # even though .psf.tt0 carries it — so CARTA/PyBDSF/FITS see no beam. Stamp the psf beam
+    # even though .psf.tt0 carries it - so CARTA/PyBDSF/FITS see no beam. Stamp the psf beam
     # onto the restored brightness products here, BEFORE the StokesI subimage + PB correction
     # below, so those derivatives inherit the same beam.
     _stamp_beam_from_psf(imagename, deconvolver)
@@ -490,7 +490,7 @@ def _build_and_clean(vis, imagename, spw, cell, robust, imsize, wprojplanes, nit
     make_alpha(imagename, deconvolver, stokes, alpha_nsigma=alpha_nsigma)
 
     # katbeam primary-beam correction (produces .katbeam.pb + .katbeam_pbcor.image) is OFF by
-    # default in this fork — it is slow on large multi-Stokes images and most users apply their
+    # default in this fork - it is slow on large multi-Stokes images and most users apply their
     # own PB correction. Enable it with pbcorr=True in the [image] config section.
     if not pbcorr:
         logger.info('pbcorr=False: skipping katbeam primary-beam correction (no .katbeam* products written).')
@@ -571,7 +571,7 @@ if __name__ == '__main__':
     bookkeeping.rename_logs(logfile)
 
     # If tclean was skipped (image already existed), the casampi MPI servers were spun up at
-    # import but never engaged. The interpreter would then hang at exit, and — crucially — the
+    # import but never engaged. The interpreter would then hang at exit, and - crucially - the
     # orphaned server ranks keep mpirun alive even if the client (rank 0) exits, so the job
     # idles to the SLURM time limit (observed: 8 s of real work, then a ~2.5 h stall). Force a
     # teardown of the WHOLE MPI world so the job ends immediately. (Fresh parallel-tclean runs
@@ -582,7 +582,7 @@ if __name__ == '__main__':
         def _terminate(signum=None, frame=None):
             sys.stdout.flush()
             sys.stderr.flush()
-            # os._exit(0) only kills rank 0 — the blocked server ranks would keep mpirun alive.
+            # os._exit(0) only kills rank 0 - the blocked server ranks would keep mpirun alive.
             # MPI_Abort tears down every rank so the job actually ends (exit code 0 -> COMPLETED
             # on OpenMPI, which returns the abort code).
             try:
