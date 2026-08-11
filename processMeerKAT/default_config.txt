@@ -1,26 +1,113 @@
-[crosscal]
-minbaselines = 4        # Minimum number of baseline while calibrating
-specave = 1             # Number of chans to avg after calibration
-timeave = '8s'          # Time interval to avg after calibration
-spw = '0:860~1700MHz'   # spw to use for calibration
-calcrefant = True       # Calculate reference antenna in program (overwrites 'refant')
-refant = 'm005'         # Reference antenna name/number
-badfreqranges = ['944~947MHz', '1160~1310MHz', '1476~1611MHz', '1670~1700MHz']
+[data]
+vis = ''
 
-[slurm]			#See processMeerKAT.py -h for help
-nodes = 4
+[fields]
+bpassfield = ''
+fluxfield = ''
+phasecalfield = ''
+targetfields = ''
+extrafields = ''
+
+[slurm]                           # See processMeerKAT.py -h for documentation
+nodes = 1
 ntasks_per_node = 8
-cpus_per_task = 3
-mem_per_cpu = 4096
-plane = 4
+plane = 1
+mem = 232                         # Use this many GB of memory (per node)
+partition = 'Main'                # SLURM partition to use
+exclude = ''                      # SLURM nodes to exclude
+time = '12:00:00'
 submit = False
-container = '/data/exp_soft/pipelines/casameer-5.4.0.simg'
-mpi_wrapper = '/data/exp_soft/pipelines/casa-prerelease-5.3.0-115.el7/bin/mpicasa'
+container = '/software/astro/containers/casa-modular/casa-6.5.0-modular.sif'
+mpi_wrapper = 'mpirun'
+name = ''
+dependencies = ''
+account = 'b03-idia-ag'
+reservation = ''
+modules = ['openmpi/4.0.3']
 verbose = False
-scripts = [ ('partition.py',True,''),
+precal_scripts = [('calc_refant.py',False,''), ('partition.py',True,'')]
+postcal_scripts = [('concat.py',False,''), ('plotcal_spw.py', False, ''), ('selfcal_part1.py',True,''), ('selfcal_part2.py',False,''), ('science_image.py', True, '')]
+scripts = [ ('validate_input.py',False,''),
             ('flag_round_1.py',True,''),
-            ('parallel_cal.py',False,''),
+            ('calc_refant.py',False,''),
+            ('setjy.py',True,''),
+            ('xx_yy_solve.py',False,''),
+            ('xx_yy_apply.py',True,''),
             ('flag_round_2.py',True,''),
-            ('cross_cal.py',False,''),
-            ('split.py',True,'')]
+            ('xx_yy_solve.py',False,''),
+            ('xx_yy_apply.py',True,''),
+            ('split.py',True,''),
+            ('quick_tclean.py',True,'')]
 
+[crosscal]
+polcalfield = ''                  # Fallback XY-phase calibrator: only used when no canonical pol calibrator (3C286/3C138/3C48/J1130-1449) is in the MS. Auto-annotated by -B based on field detection.
+minbaselines = 4                  # Minimum number of baselines to use while calibrating
+chanbin = 1                       # Number of channels to average before calibration (during partition)
+width = 1                         # Number of channels to (further) average after calibration (during split)
+timeavg = '8s'                    # Time interval to average after calibration (during split)
+createmms = True                  # Create MMS (True) or MS (False) for cross-calibration during partition
+keepmms = True                    # Output MMS (True) or MS (False) during split
+spw = '*:880~933MHz,*:960~1010MHz,*:1010~1060MHz,*:1060~1110MHz,*:1110~1163MHz,*:1299~1350MHz,*:1350~1400MHz,*:1400~1450MHz,*:1450~1500MHz,*:1500~1524MHz,*:1630~1680MHz' # Spectral window / frequencies to extract for MMS
+nspw = 11                         # Number of spectral windows to split into
+calcrefant = False                # Calculate reference antenna in program (overwrites 'refant')
+refant = 'm059'                   # Reference antenna name / number
+standard = 'Stevens-Reynolds 2016'# Flux density standard for setjy
+badants = []                      # List of bad antenna numbers (to flag)
+badfreqranges = [ '933~960MHz',   # List of bad frequency ranges (to flag)
+                  '1163~1299MHz',
+                  '1524~1630MHz']
+
+[selfcal]
+nloops = 2                        # Number of clean + bdsf loops.
+loop = 0                          # If nonzero, adds this number to nloops to name images or continue previous run
+cell = '1.5arcsec'
+robust = -0.5
+imsize = [6144, 6144]
+wprojplanes = 512
+niter = [10000, 50000, 50000]
+threshold = ['0.5mJy', 10, 10]    # After loop 0, S/N values if >= 1.0, otherwise Jy
+nterms = 2                        # Number of taylor terms
+gridder = 'wproject'
+deconvolver = 'mtmfs'
+calmode = ['','p']                # '' to skip solving (will also exclude mask for this loop), 'p' for phase-only and 'ap' for amplitude and phase
+solint = ['','1min']
+uvrange = ''                      # uv range cutoff for gaincal
+flag = True                       # Flag residual column after selfcal?
+gaintype = 'T'                    # Use 'T' for polarisation on linear feeds (e.g. MeerKAT); 'G' for circular feeds (e.g. VLA)
+discard_nloops = 0                # Discard this many selfcal solutions (e.g. from quick and dirty image) during subsequent loops (only considers when calmode !='')
+outlier_threshold = 0.0           # S/N values if >= 1.0, otherwise Jy
+outlier_radius = 0.0              # Radius in degrees for identifying outliers in RACS
+atrous_do = False                 # Enable PyBDSF wavelet (a-trous) decomposition during selfcal source finding (set True to better recover extended emission)
+
+[image]
+cell = '1.5arcsec'
+robust = -0.5
+imsize = [6144, 6144]
+wprojplanes = 512
+niter = 50000
+threshold = 10                    # S/N value if >= 1.0 and rmsmap != '', otherwise Jy
+multiscale = [0, 5, 10, 15]
+nterms = 2                        # Number of taylor terms
+gridder = 'wproject'
+deconvolver = 'mtmfs'
+restoringbeam = ''
+stokes = 'I'
+pbcorr = False                    # Apply katbeam primary-beam correction (writes .katbeam.pb + .katbeam_pbcor.image)? OFF by default - slow on large multi-Stokes images; set True to re-enable. pbthreshold/pbband below only apply when pbcorr = True
+pbthreshold = 0.1                 # Threshold below which to mask the PB for PB correction (only used when pbcorr = True)
+pbband = 'LBand'                  # Which band to use to generate the PB - one of "LBand" "SBand" or "UHF" (only used when pbcorr = True)
+mask = ''
+rmsmap = ''
+outlierfile = ''
+usemask = 'user'                  # 'user' = standard behaviour using `mask`; 'auto-multithresh' = use thresholds below instead
+sidelobethreshold = 0.5           # only used when usemask = 'auto-multithresh'
+noisethreshold = 5.0              # only used when usemask = 'auto-multithresh'
+lownoisethreshold = 0.01          # only used when usemask = 'auto-multithresh'
+negativethreshold = 0.0           # only used when usemask = 'auto-multithresh'
+alpha_nsigma = 1.0                # DEPRECATED/UNUSED (kept for back-compat): the alpha step now writes only the raw alpha + alpha.error maps; do any sigma clipping yourself
+spw_cube = False                  # Image each SPW separately (into SPW_MFSs/) and merge into a single 4D (RA,Dec,Stokes,freq) cube with a per-plane beam table; use stokes='IQUV' for a full-Stokes continuum cube
+common_beam = False               # spw_cube only: if True, also convolve every cube slice to one common (largest) beam -> *.cube.commonbeam.image. False keeps the per-plane CASA beam table (individual beam per frequency)
+spwid = ''                        # SPW IDs to image when spw_cube=True, as a list [0,1,2] or string '0,1,2'; '' (or []) = all SPWs in the MS. Frequency labels are auto-derived from the MS
+
+[run]                             # Internal variables for pipeline execution
+continue = True
+dopol = False

@@ -1,15 +1,19 @@
-#! /usr/bin/env python
+#Copyright (C) 2022 Inter-University Institute for Data Intensive Astronomy
+#See processMeerKAT.py for license details.
+
+#!/usr/bin/env python3
 
 import argparse
-import ConfigParser
+import configparser
 import ast
+import processMeerKAT
 
 def parse_args():
     """
     Parse the command line arguments
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', required=True, help='Name of the input config file')
+    parser.add_argument('-C','--config', default=processMeerKAT.CONFIG, required=False, help='Name of the input config file')
 
     args, __ = parser.parse_known_args()
 
@@ -22,7 +26,7 @@ def parse_config(filename):
     should represent task parameters and values respectively.
     """
 
-    config = ConfigParser.SafeConfigParser()
+    config = configparser.RawConfigParser(allow_no_value=True)
     config.read(filename)
 
     # Build a nested dictionary with tasknames at the top level
@@ -35,34 +39,86 @@ def parse_config(filename):
 
         for option in config.options(section):
             # Evaluate to the right type()
-            taskvals[section][option] =\
-                            ast.literal_eval(config.get(section, option))
+            try:
+                taskvals[section][option] = ast.literal_eval(config.get(section, option))
+            except (ValueError,SyntaxError):
+                err = "Cannot format field '{0}' in config file '{1}'".format(option,filename)
+                err += ", which is currently set to {0}. Ensure strings are in 'quotes'.".format(config.get(section, option))
+                raise ValueError(err)
 
     return taskvals, config
 
+def has_key(filename, section, key):
+    config_dict,config = parse_config(filename)
+    if has_section(filename, section) and key in config_dict[section]:
+        return True
+    return False
 
-def overwrite_config(filename, conf_sec='', conf_dict={}):
+def has_section(filename, section):
+
+    config_dict,config = parse_config(filename)
+    return section in config_dict
+
+def get_key(filename, section, key):
+    config_dict,config = parse_config(filename)
+    if has_key(filename, section, key):
+        return config_dict[section][key]
+    return ''
+
+def remove_section(filename, section):
+
+    config_dict,config = parse_config(filename)
+    config.remove_section(section)
+    config_file = open(filename, 'w')
+    config.write(config_file)
+    config_file.close()
+
+def overwrite_config(filename, conf_dict={}, conf_sec='', sec_comment=''):
 
     config_dict,config = parse_config(filename)
 
     if conf_sec not in config.sections():
+        processMeerKAT.logger.debug('Writing [{0}] section in config file "{1}" with:\n{2}.'.format(conf_sec,filename,conf_dict))
         config.add_section(conf_sec)
+    else:
+        processMeerKAT.logger.debug('Overwritting [{0}] section in config file "{1}" with:\n{2}.'.format(conf_sec,filename,conf_dict))
 
-        for key in conf_dict.keys():
-            config.set(conf_sec, key, str(conf_dict[key]))
+    if sec_comment != '':
+        config.set(conf_sec, sec_comment)
 
-        config_file = open(filename, 'w')
-        config.write(config_file)
-        config_file.close()
+    for key in conf_dict.keys():
+        config.set(conf_sec, key, str(conf_dict[key]))
+
+    config_file = open(filename, 'w')
+    config.write(config_file)
+    config_file.close()
+
+def parse_spw(filename):
+
+    config_dict,config = parse_config(filename)
+    spw = config_dict['crosscal']['spw']
+    nspw = config_dict['crosscal']['nspw']
+
+    if ',' in spw:
+        SPWs = spw.split(',')
+        low,high,unit,dirs = [0]*len(SPWs),[0]*len(SPWs),['']*len(SPWs),['']*len(SPWs)
+        for i,SPW in enumerate(SPWs):
+            low[i],high[i],unit[i],func = processMeerKAT.get_spw_bounds(SPW)
+            dirs[i] = '{0}~{1}{2}'.format(low[i],high[i],unit[i])
+
+        lowest = min(low)
+        highest = max(high)
+
+        # Uncomment to simply use e.g. '*MHz'
+        # if all([i == unit[0] for i in unit]):
+        #     unit = unit[0]
+        #     dirs = '*{0}'.format(unit)
 
     else:
-        for key in conf_dict.keys():
-            config.set(conf_sec, key, str(conf_dict[key]))
+        low,high,unit,func = processMeerKAT.get_spw_bounds(spw)
+        dirs = []
 
-        config_file = open(filename, 'w')
-        config.write(config_file)
-        config_file.close()
-
+    return low,high,unit,dirs
 
 def validate_args(kwdict, section, key, dtype, default=None):
     """
@@ -120,5 +176,4 @@ def validate_args(kwdict, section, key, dtype, default=None):
 if __name__ == '__main__':
     cliargs = parse_args()
     taskvals,config = parse_config(cliargs.config)
-    print taskvals
-
+    print(taskvals)

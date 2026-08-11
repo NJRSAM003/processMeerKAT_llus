@@ -1,0 +1,4 @@
+dir=$(dirname $BASH_SOURCE)
+export PATH=$dir:$PATH
+export PYTHONPATH=$dir:$PYTHONPATH
+export SINGULARITYENV_PYTHONPATH="$dir:\$PYTHONPATH"
