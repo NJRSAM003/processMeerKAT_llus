@@ -277,6 +277,14 @@ def check_spw(config,msmd):
         high_MHz = int(round(ms_high+0.5))
         update = True
 
+    #If the config already gives an explicit multi-SPW list (comma-separated) that fits
+    #within the MS, keep it exactly as written so the hard-coded window boundaries and the
+    #RFI gaps are preserved. Only when the requested range falls outside the MS do we clip
+    #it back to a single min~max range.
+    orig_spw = config_parser.get_key(config, 'crosscal', 'spw')
+    if not update and ',' in str(orig_spw):
+        return orig_spw
+
     SPW = '*:{0}~{1}MHz'.format(low_MHz,high_MHz)
 
     if update:

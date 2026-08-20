@@ -21,7 +21,7 @@ container = '/software/astro/containers/casa-modular/casa-6.5.0-modular.sif'
 mpi_wrapper = 'mpirun'
 name = ''
 dependencies = ''
-account = 'b03-idia-ag'
+account = 'b234-llus-ag'         # SLURM accounting group (override on the command line with -A)
 reservation = ''
 modules = ['openmpi/4.0.3']
 verbose = False
@@ -47,15 +47,15 @@ width = 1                         # Number of channels to (further) average afte
 timeavg = '8s'                    # Time interval to average after calibration (during split)
 createmms = True                  # Create MMS (True) or MS (False) for cross-calibration during partition
 keepmms = True                    # Output MMS (True) or MS (False) during split
-spw = '*:880~933MHz,*:960~1010MHz,*:1010~1060MHz,*:1060~1110MHz,*:1110~1163MHz,*:1299~1350MHz,*:1350~1400MHz,*:1400~1450MHz,*:1450~1500MHz,*:1500~1524MHz,*:1630~1680MHz' # Spectral window / frequencies to extract for MMS
+spw = '*:880~930MHz,*:960~1010MHz,*:1010~1060MHz,*:1060~1110MHz,*:1110~1160MHz,*:1300~1350MHz,*:1350~1400MHz,*:1400~1450MHz,*:1450~1500MHz,*:1500~1520MHz,*:1630~1680MHz' # 11 hard-coded SPWs (round to 10 MHz) spanning 880-1680 MHz, with the three MeerKAT L-band RFI gaps (see badfreqranges) omitted
 nspw = 11                         # Number of spectral windows to split into
 calcrefant = False                # Calculate reference antenna in program (overwrites 'refant')
 refant = 'm059'                   # Reference antenna name / number
 standard = 'Stevens-Reynolds 2016'# Flux density standard for setjy
 badants = []                      # List of bad antenna numbers (to flag)
-badfreqranges = [ '933~960MHz',   # List of bad frequency ranges (to flag)
-                  '1163~1299MHz',
-                  '1524~1630MHz']
+badfreqranges = [ '930~960MHz',   # List of bad frequency ranges (to flag)
+                  '1160~1300MHz',
+                  '1520~1630MHz']
 
 [selfcal]
 nloops = 2                        # Number of clean + bdsf loops.
